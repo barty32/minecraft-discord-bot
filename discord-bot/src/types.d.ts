@@ -4,6 +4,6 @@
 //  1003 => message
 //  1004 => error message
 export interface WSMessage<T> {
-  code: number;
-  payload: T;
+	code: number;
+	payload: T;
 }
