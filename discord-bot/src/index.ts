@@ -1,7 +1,6 @@
-import { Client, Intents, MessageEmbed, TextChannel } from 'discord.js';
+import { Client, GatewayIntentBits, EmbedBuilder, TextChannel } from 'discord.js';
 import dotenv from 'dotenv';
-import WS from 'isomorphic-ws';
-import fetch from 'node-fetch';
+import WS from 'ws';
 import ping from 'ping';
 import wol from 'wol';
 import {
@@ -15,7 +14,7 @@ import { WSMessage } from './types';
 dotenv.config();
 
 const client = new Client({
-  intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
 });
 
 (async () => {
@@ -99,10 +98,10 @@ const client = new Client({
   const connectToWS = async () => {
     if (wsConnection || isWSOpen) return;
 
-    const embed = new MessageEmbed()
+    const embed = new EmbedBuilder()
       .setTitle('Connecting')
       .setDescription(`Response to command: ${_cmd}, issued by @${_usr}.`)
-      .addField('\u200B', 'Connecting to the server.');
+      .addFields([{name: '\u200B', value: 'Connecting to the server.'}]);
     command_channel.send({
       embeds: [embed],
     });
@@ -111,7 +110,7 @@ const client = new Client({
       return null;
     });
     if (!wsConnection) {
-      const embed = new MessageEmbed()
+      const embed = new EmbedBuilder()
         .setColor('#FF0000')
         .setTitle('Error')
         .setDescription('Fatal error occured while connecting to the server.');
@@ -129,10 +128,10 @@ const client = new Client({
     });
 
     {
-      const embed = new MessageEmbed()
+      const embed = new EmbedBuilder()
         .setTitle('Connected')
         .setDescription(`Response to command: ${_cmd}, issued by @${_usr}.`)
-        .addField('\u200B', 'Connected to the server.');
+        .addFields([{name: '\u200B', value: 'Connected to the server.'}]);
       command_channel.send({
         embeds: [embed],
       });
@@ -167,39 +166,36 @@ const client = new Client({
         case 1002:
           if (parsed.payload === 'ONLINE') {
             //starting = false;
-            const embed = new MessageEmbed()
+            const embed = new EmbedBuilder()
               .setColor('#00ff00')
               .setTitle('🟢 Server ONLINE')
               .setDescription('@everyone The server is online!')
-              .addField(
-                '\u200B',
-                'You can now join it: **minecraft.janstaffa.cz**.'
-              );
+              .addFields([{name: '\u200B', value: 'You can now join it: **minecraft.janstaffa.cz**.'}]);
             command_channel.send({ embeds: [embed] });
           }
           break;
         case 1003:
           {
-            const embed = new MessageEmbed()
+            const embed = new EmbedBuilder()
               .setColor('#000000')
               .setTitle('Message')
               .setDescription(
                 `Response to command: ${_cmd}, issued by @${_usr}.`
               )
-              .addField('\u200B', parsed.payload);
+              .addFields([{name: '\u200B', value: parsed.payload}]);
 
             command_channel.send({ embeds: [embed] });
           }
           break;
         case 1004:
           {
-            const embed = new MessageEmbed()
+            const embed = new EmbedBuilder()
               .setColor('#FF0000')
               .setTitle('Error')
               .setDescription(
                 `Response to command: ${_cmd}, issued by @${_usr}.`
               )
-              .addField('\u200B', parsed.payload);
+              .addFields([{name: '\u200B', value: parsed.payload}]);
 
             command_channel.send({ embeds: [embed] });
           }
@@ -223,7 +219,7 @@ const client = new Client({
         .then((response) => response.text())
         .then((response) => {
           if (response !== 'OK') {
-            const embed = new MessageEmbed()
+            const embed = new EmbedBuilder()
               .setColor('#ff0000')
               .setTitle('Error')
               .setDescription(response);
@@ -236,7 +232,7 @@ const client = new Client({
         })
         .catch((e) => {
           console.error(e);
-          const embed = new MessageEmbed()
+          const embed = new EmbedBuilder()
             .setColor('#ff0000')
             .setTitle('Error')
             .setDescription('Failed to send command. Please try again.');
@@ -253,7 +249,7 @@ const client = new Client({
       const raw = content.slice(1);
       const words = raw.split(' ');
       if (words.length === 0) {
-        const embed = new MessageEmbed()
+        const embed = new EmbedBuilder()
           .setColor('#ff0000')
           .setTitle('Error')
           .setDescription('No command specified.');
@@ -269,7 +265,7 @@ const client = new Client({
 
       if (command !== 'start' && command !== 'status') {
         if (!isAlive) {
-          const embed = new MessageEmbed()
+          const embed = new EmbedBuilder()
             .setColor('#ff0000')
             .setTitle('Error')
             .setDescription('Server is offline.');
@@ -287,7 +283,7 @@ const client = new Client({
       switch (command) {
         case 'start': {
           /*if (starting) {
-            const embed = new MessageEmbed()
+            const embed = new EmbedBuilder()
               .setColor('#FF0000')
               .setTitle('Error')
               .setDescription('The server is already starting.');
@@ -299,12 +295,12 @@ const client = new Client({
 	  */
           log_channel.send('**Server starting...**');
           if (!isAlive) {
-            const embed = new MessageEmbed()
+            const embed = new EmbedBuilder()
               .setTitle('Server starting')
               .setDescription(
                 `Response to command: ${_cmd}, issued by @${_usr}.`
               )
-              .addField('\u200B', 'Starting the machine.');
+              .addFields([{name: '\u200B', value: 'Starting the machine.'}]);
             message.channel.send({
               embeds: [embed],
             });
@@ -333,7 +329,7 @@ const client = new Client({
 
         case 'cmd':
           if (words.length < 2) {
-            const embed = new MessageEmbed()
+            const embed = new EmbedBuilder()
               .setColor('#ff0000')
               .setTitle('Error')
               .setDescription('No command specified.');
@@ -359,7 +355,7 @@ const client = new Client({
             .then((response) => response.json())
             .then((response) => {
               if (response.error === 1) {
-                const embed = new MessageEmbed()
+                const embed = new EmbedBuilder()
                   .setColor('#ff0000')
                   .setTitle('Error')
                   .setDescription(response.message);
@@ -368,19 +364,19 @@ const client = new Client({
                 });
                 return;
               }
-              const embed = new MessageEmbed()
+              const embed = new EmbedBuilder()
                 .setColor('#000000')
                 .setTitle('Message')
                 .setDescription(
                   `Response to command: ${command}, issued by @${message.author.username}.`
                 )
-                .addField('\u200B', response.result);
+                .addFields([{name: '\u200B', value: response.result}]);
               message.channel.send({
                 embeds: [embed],
               });
             })
             .catch((_) => {
-              const embed = new MessageEmbed()
+              const embed = new EmbedBuilder()
                 .setColor('#ff0000')
                 .setTitle('Error')
                 .setDescription('Failed to send command: ' + cmd);
@@ -391,7 +387,7 @@ const client = new Client({
           break;
         case 'status':
           if (!isAlive) {
-            const embed = new MessageEmbed()
+            const embed = new EmbedBuilder()
               .setTitle('Status')
               .setDescription('POWERED DOWN 🔴');
             message.reply({
@@ -422,7 +418,7 @@ const client = new Client({
                   new_status = 'ONLINE  🟢';
                   break;
               }
-              const embed = new MessageEmbed()
+              const embed = new EmbedBuilder()
                 .setTitle('Status')
                 .setDescription(new_status);
 
@@ -431,7 +427,7 @@ const client = new Client({
               });
             })
             .catch((_) => {
-              const embed = new MessageEmbed()
+              const embed = new EmbedBuilder()
                 .setColor('#ff0000')
                 .setTitle('Error')
                 .setDescription('Failed to get server status.');
@@ -444,7 +440,7 @@ const client = new Client({
 
         case 'loadbackup':
           if (words.length < 2) {
-            const embed = new MessageEmbed()
+            const embed = new EmbedBuilder()
               .setColor('#ff0000')
               .setTitle('Error')
               .setDescription(
@@ -468,7 +464,7 @@ const client = new Client({
             .then((response) => response.json())
             .then((response) => {
               if (response.error === 1) {
-                const embed = new MessageEmbed()
+                const embed = new EmbedBuilder()
                   .setColor('#ff0000')
                   .setTitle('Error')
                   .setDescription(response.message);
@@ -484,7 +480,7 @@ const client = new Client({
               +===============+=========================+==========+
               `;*/
 
-              const embed = new MessageEmbed()
+              const embed = new EmbedBuilder()
                 .setColor('#000000')
                 .setTitle('Message')
                 .setDescription(
@@ -492,7 +488,7 @@ const client = new Client({
                 );
 
               if (response.result.length === 0) {
-                embed.addField('\u200B', 'No backups were found.');
+                embed.addFields([{name: '\u200B', value: 'No backups were found.'}]);
                 message.channel.send({
                   embeds: [embed],
                 });
@@ -502,10 +498,10 @@ const client = new Client({
                 const id = backup.id.toString();
                 const date = backup.date;
 
-                embed.addField(
-                  '\u200B',
-                  `id: ${id} | date: ${date} | [download](http://minecraft.janstaffa.cz:25566/api/backup/${id})`
-                );
+                embed.addFields([{
+                  name: '\u200B',
+                  value: `id: ${id} | date: ${date} | [download](http://minecraft.janstaffa.cz:25566/api/backup/${id})`
+                }]);
                 /*content += `
                 |${id + " ".repeat(15 - id.length)}|${date + " ".repeat(25 - date.length)}| [download](http://minecraft.janstaffa.cz:25566/api/backup/${id}) |
                 +---------------+-------------------------+----------+
@@ -518,7 +514,7 @@ const client = new Client({
             })
             .catch((e) => {
               console.error(e);
-              const embed = new MessageEmbed()
+              const embed = new EmbedBuilder()
                 .setColor('#ff0000')
                 .setTitle('Error')
                 .setDescription('Failed to list backups.');
@@ -534,7 +530,7 @@ const client = new Client({
           sendRequest('/api/' + command, 'POST');
           break;
         default: {
-          const embed = new MessageEmbed()
+          const embed = new EmbedBuilder()
             .setColor('#ff0000')
             .setTitle('Error')
             .setDescription('Invalid command: ' + command);

@@ -1,27 +1,26 @@
 {
-  "name": "mcserver-interface_discordbot",
-  "version": "1.0.0",
+  "name": "minecraft-discord-bot",
+  "version": "2.0.0",
   "main": "index.js",
   "author": "janstaffa",
   "license": "MIT",
+  "scripts": {
+    "watch": "tsx watch src/index.ts",
+    "dev": "tsx src/index.ts",
+    "build": "tsc"
+  },
   "dependencies": {
-    "@types/node": "^17.0.8",
+    "@types/node": "^22.15.18",
     "@types/ping": "^0.4.1",
-    "@types/wol": "^1.0.1",
-    "discord.js": "^13.5.1",
-    "dotenv": "^10.0.0",
-    "isomorphic-ws": "^4.0.1",
-    "minecraft-server-util": "^5.2.8",
+    "@types/wol": "^1.0.4",
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.5.0",
     "ping": "^0.4.1",
-    "ts-node": "^10.4.0",
-    "ts-node-dev": "^1.1.8",
-    "wol": "^1.0.7"
+    "wol": "^1.0.7",
+    "ws": "^8.18.2"
   },
   "devDependencies": {
-    "typescript": "^4.5.4"
-  },
-  "scripts": {
-    "dev": "ts-node-dev --respawn --clear --rs src/index.ts",
-    "build": "tsc"
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
   }
 }
