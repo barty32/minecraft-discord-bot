@@ -1,545 +1,316 @@
-import { exec } from 'child_process';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import express from 'express';
-import fs from 'fs';
-import { RCON } from 'minecraft-server-util';
 import path from 'path';
-import { createClient } from 'redis';
 import sqlite3 from 'sqlite3';
-import WebSocket from 'ws';
-import {
-  BACKUP_PATH,
-  DATA_PATH,
-  MC_SERVER_NAME,
-  REDIS_PUBLIC_CHANNEL,
-  REDIS_URL,
-  SERVER_ADDRESS
-} from './constants';
-import { WSMessage } from './types';
-import {
-  Server,
-  ServerStatus,
-  createBackup,
-  error,
-  log,
-  makeBackupName,
-  shutdown,
-  spawnSyncProcess,
-  startMCServerProcess
-} from './util';
-import { initializeWebsocket } from './websocket';
+import 'dotenv/config';
+import osutil from 'node-os-utils';
+import { ComputerStatusUpdate, MinecraftStatusUpdate, ServerStatus, WSMessageType } from './types.js';
+import { SERVER_PORT, SERVER_ROOT_PATH } from './constants.js';
+import { MinecraftServer } from './server.js';
+import { authentication, error, log, shutdown } from './util.js';
+import { WebSocketHandler } from './websocket.js';
+import { autoBackupMCWorld, createBackup, getBackup, loadBackup } from './backups.js';
 
-const createRedisClient = async () => {
-  const c = createClient({
-    url: REDIS_URL,
-  });
-  await c.connect();
+const serverDir = path.join(SERVER_ROOT_PATH);
+process.chdir(serverDir);
 
-  return c;
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+//sqlite setup
+const SQLite = sqlite3.verbose();
+export const db = new SQLite.Database(path.join(SERVER_ROOT_PATH, 'backups.db'));
+
+export function query(command: string, method: 'all' | 'run' | 'get' | 'each' | 'prepare' = 'all') {
+	return new Promise((resolve, reject) => {
+		db[method](command, (error: any, result: any) => {
+			if(error) {
+				reject(error);
+			} else {
+				resolve(result);
+			}
+		});
+	});
 };
 
-(async () => {
-  dotenv.config();
-
-  // sqlite setup
-  const SQLite = sqlite3.verbose();
-  const db = new SQLite.Database('/home/mcserver/ftp/server/server_api/backups.db');
-
-  // redis setup
-
-  const pub = await createRedisClient();
-  const sub = await createRedisClient();
-
-  const query = (command: string, method: string = 'all') => {
-    return new Promise((resolve, reject) => {
-      // @ts-ignore
-      db[method](command, (error: any, result: any) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(result);
-        }
-      });
-    });
-  };
-
-  db.serialize(async () => {
-    await query(
-      'CREATE TABLE IF NOT EXISTS backups (id INTEGER UNIQUE, name TEXT, date TEXT)',
-      'run'
-    );
-  });
-
-  const serverDir = path.join('/home/mcserver/ftp/server');
-  process.chdir(serverDir);
-
-  const app = express();
-
-  app.use(cors());
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
-
-
-  // serve backups without authentication middleware
-  app.get('/api/backup/:id', (req, res) => {
-    const id = req.params['id'];
-    const file = makeBackupName(id) + '.tar.gz';
-    res.download(BACKUP_PATH + file);
-  });
-
-  // initialize the server object
-  let server: Server = {
-    status: ServerStatus.Offline,
-    getStatus: () => {
-      switch (server.status) {
-        case ServerStatus.Online:
-          return 'ONLINE';
-        case ServerStatus.Offline:
-          return 'OFFLINE';
-        case ServerStatus.Starting:
-          return 'STARTING';
-        case ServerStatus.Stopping:
-          return 'STOPPING';
-      }
-    },
-    start: () => {
-      log('Starting the server.');
-      server.process = startMCServerProcess();
-      server.process.stdout.setEncoding('utf8');
-
-      // default 'close' event listener
-      server.process.addListener('close', (code) => {
-        server.status = ServerStatus.Offline;
-      });
-
-      server.status = ServerStatus.Starting;
-
-      server.process.stdout.addListener('data', (chunk) => {
-        const message: WSMessage<string> = { code: 1001, payload: chunk };
-        pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-      });
-
-      const interval = setInterval(async () => {
-        try {
-          if (server.status === ServerStatus.Starting) {
-            const client = new RCON();
-            await client.connect(SERVER_ADDRESS, 25575);
-
-            await client.close();
-
-              server.status = ServerStatus.Online;
-              
-              setTimeout(() => {
-                  exec('bash /home/mcserver/ftp/server/server_api/move_markers.sh');
-              }, 90000);
-
-            const message: WSMessage<string> = { code: 1002, payload: server.getStatus() };
-            pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-          }
-          clearInterval(interval);
-        } catch (e) {
-          error(e);
-        }
-      }, 5000);
-    },
-    stop: () => {
-      if (!server.process) return false;
-      server.process.stdout.removeAllListeners('data');
-      const result = server.process.kill();
-      if (result) {
-        server.status = ServerStatus.Stopping;
-      }
-      return result;
-    },
-  };
-
-  var authentication = (req: any, res: any, next: any) => {
-    const key = req.header('key');
-    if (!key || key !== process.env.SECRET_KEY)
-      return res.send('Not authenticated.');
-
-    next();
-  };
-
-  // apply authentication middleware
-  app.use(authentication);
-
-  // get the current server status
-  app.get('/api/status', (_, res) => {
-    const statusString = server.getStatus();
-    res.send(statusString);
-  });
-
-  // start the server
-  app.post('/api/start', (_, res) => {
-    if (server.status !== ServerStatus.Offline) {
-      res.send(`Err: the server is not ready. Status: ${server.getStatus()}.`);
-      return;
-    }
-
-    const message: WSMessage<string> = { code: 1003, payload: "Starting minecraft server." };
-
-    pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-
-    try {
-      server.start();
-    } catch (e) {
-      res.send(e);
-      return;
-    }
-
-    res.send('OK');
-  });
-
-  // auto backup the minecraft world
-  const autoBackupMCWorld = async (): Promise<void> => {
-    return new Promise((res, rej) => {
-      const [backupName, backup_process] = createBackup(
-        'latest_automatic_backup'
-      );
-      backup_process.on('close', async () => {
-        await query(
-          `
-          INSERT OR REPLACE INTO backups (id, name, date) values
-          (0, "${backupName}", "${new Date().toISOString()}")
-         `, 'run'
-        ).catch((e) => {
-          rej(e);
-        });
-
-        res();
-      });
-    });
-  };
-  // stop the minecraft server
-  const stopMCServer = async (): Promise<void> => {
-    return new Promise((res, rej) => {
-      if (server.status === ServerStatus.Offline || !server.process) {
-        return rej('The server is offline.');
-      }
-
-      // run this only once
-      const handler = () => {
-        server.process?.removeListener('close', handler);
-        res();
-      };
-      // remove defaul event listener
-      server.process.removeAllListeners('close');
-      server.process.addListener('close', handler);
-
-      const result = server.stop();
-
-      if (!result) {
-        rej('Unknown error.');
-      }
-    });
-  };
-
-  const gracefullyStopMCServer = (): Promise<void> => {
-    log('Gracefully stopping the server.');
-    return new Promise((res, rej) => {
-      if (server.status === ServerStatus.Offline)
-        return rej('The server is offline');
-      if (server.status === ServerStatus.Stopping)
-        return rej('The server is already stopping.');
-
-      const prevStatus = server.status;
-      server.status = ServerStatus.Stopping;
-
-      const message: WSMessage<string> = {
-        code: 1003,
-        payload: 'Gracefully stopping the server.',
-      };
-      pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-
-      stopMCServer()
-        .then(() => {
-          const message: WSMessage<string> = {
-            code: 1003,
-            payload: 'Backing up the world.',
-          };
-          pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-
-          log('Backing up the world.');
-          return autoBackupMCWorld().then(() => {
-            server.status = ServerStatus.Offline;
-            log('Server was stopped.');
-            res();
-          });
-        })
-        .catch((e) => {
-          error('Failed to gracefully stop the server. ' + e);
-          server.status = prevStatus;
-          rej(e);
-        });
-    });
-  };
-  // stop the server but keep the machine running
-  app.post('/api/stop', (req, res) => {
-    gracefullyStopMCServer()
-      .then(() => {
-        const message: WSMessage<string> = {
-          code: 1003,
-          payload: 'The Server was stopped.',
-        };
-        pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-      })
-      .catch((e) => {
-        const message: WSMessage<string> = {
-          code: 1004,
-          payload: 'Failed to stop the server. ' + e,
-        };
-
-        pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-      });
-    res.send('OK');
-  });
-
-  app.post('/api/shutdown', (req, res) => {
-    if (server.status === ServerStatus.Stopping) {
-      res.send('Err: the server is stopping.');
-      return;
-    }
-
-    gracefullyStopMCServer()
-      .then(() => {
-        const message: WSMessage<string> = {
-          code: 1003,
-          payload: 'The Server was stopped.',
-        };
-        pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-      }).catch((_e) => { }).finally(() => {
-        const message: WSMessage<string> = {
-          code: 1003,
-          payload: 'Shutting down the computer.',
-        };
-        pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-
-        shutdown()
-      });
-
-    res.send('OK');
-  });
-  // send a command using RCON
-  app.post('/api/command', async (req, res) => {
-    if(!(server.status === ServerStatus.Online || server.status === ServerStatus.Starting)) {
-      res.send({ error: 1, message: "Cannot execute the command, the server is not running."});
-      return;
-    }
-    const command = req.body['command'];
-
-    if (!command) {
-      res.send({ error: 1, message: 'No command provided.' });
-      return;
-    }
-
-    const client = new RCON();
-
-    try {
-      await client.connect(SERVER_ADDRESS, 25575);
-      await client.login(process.env.RCON_PASSWORD!);
-
-      const result = await client.execute(command);
-
-      await client.close();
-
-      res.send({ error: 0, result });
-    } catch (e) {
-      error(e);
-      res.send({ error: 1, message: `Failed to execute command: '${command}'.` });
-    }
-  });
-
-  // create a backup of the current world
-  app.post('/api/backup', async (req, res) => {
-    if (server.status !== ServerStatus.Offline) {
-      res.send('Err: cannot backup when the server is running.');
-      return;
-    }
-
-    log('Backing up the world.');
-    const message: WSMessage<string> = {
-      code: 1003,
-      payload: 'Backing up the world.',
-    };
-
-    pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-
-    const time = Date.now();
-    const id = time.toString();
-    const fileName = makeBackupName(id);
-
-    const [backupName, backup_process] = createBackup(fileName);
-    backup_process.on('close', () => {
-      query(
-        `INSERT INTO backups VALUES (${time}, "${backupName}", "${new Date().toISOString()}")`,
-        'run'
-      )
-        .then(() => {
-          log(`Backup '${id}' was created.`);
-          const message: WSMessage<string> = {
-            code: 1003,
-            payload: `Backup '${id}' was created.`,
-          };
-
-          pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-        })
-        .catch((e) => {
-          error(e);
-          const message: WSMessage<string> = {
-            code: 1004,
-            payload: 'Failed to create a backup. Database error.',
-          };
-
-          pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-        });
-    });
-
-    res.send('OK');
-  });
-
-  // get all available backups
-  app.get('/api/backups', async (req, res) => {
-    try {
-      const result = await query('SELECT * FROM backups').catch((e) => {
-        throw e;
-      });
-      res.json({ error: 0, result });
-    } catch (e) {
-      res.json({ error: 1, message: 'Failed to query database.' });
-    }
-  });
-
-  // load a backup
-  app.post('/api/backup/load/:id', async (req, res) => {
-    if (server.status !== ServerStatus.Offline) {
-      res.send(
-        'Err: cannot load a backup when the server is running. In order to succeed, stop it first.'
-      );
-      return;
-    }
-
-    const id = req.params['id'];
-
-    const message: WSMessage<string> = {
-      code: 1003,
-      payload: `Loading backup '${id}'.`,
-    };
-    pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-
-    const backupName = makeBackupName(id);
-    const filePath = backupName + '.tar.gz';
-    const fullPath = BACKUP_PATH + filePath;
-
-    try {
-      const exists = (await query(
-        `SELECT 1 FROM backups WHERE id=${id} LIMIT 1`,
-        'all'
-      ).catch((e) => {
-        throw e;
-      })) as [];
-
-      if (!fs.existsSync(fullPath) || exists.length === 0) throw new Error();
-    } catch (e) {
-      error(e);
-      res.send(`Err: backup '${id}' was not found.`);
-    }
-
-    new Promise(async (_, rej) => {
-      try {
-        // remove all contents of the data directory
-        await spawnSyncProcess('rm', ['-r', DATA_PATH + '*']).catch((e) => {
-          throw e;
-        });
-        // untar the backup archive into the data directory
-        await spawnSyncProcess('tar', [
-          '-zxf',
-          fullPath,
-          MC_SERVER_NAME,
-        ]).catch((e) => {
-          throw e;
-        });
-      } catch (e) {
-        return rej(e);
-      }
-
-      const message: WSMessage<string> = {
-        code: 1003,
-        payload: `The backup '${id}' was loaded.`,
-      };
-
-      pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-    }).catch((e) => {
-      error(e);
-      const message: WSMessage<string> = {
-        code: 1004,
-        payload: 'Failed to load the backup. Unknown error.',
-      };
-
-      pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-    });
-    res.send('OK');
-  });
-
-  // restart the MC server
-  app.post('/api/restart', async (req, res) => {
-    if (server.status !== ServerStatus.Online || !server.process) {
-      res.send(
-        "Err: couldn't restart the server. Make sure the server is running."
-      );
-      return;
-    }
-
-    const message: WSMessage<string> = {
-      code: 1003,
-      payload: 'Restarting the server.',
-    };
-    pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-
-    gracefullyStopMCServer()
-      .then(() => {
-        const message: WSMessage<string> = {
-          code: 1003,
-          payload: 'The Server was stopped, restarting.',
-        };
-        pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-        server.start();
-      })
-      .catch((e) => {
-        const message: WSMessage<string> = {
-          code: 1004,
-          payload: 'Failed to stop the server. ' + e,
-        };
-        pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-      });
-    res.send('OK');
-  });
-
-  const PORT = 25566;
-  const s = app.listen(PORT, () => {
-    log(`Server listening at http://localhost:${PORT}`);
-  });
-
-  // initialize ws server
-  let wss = initializeWebsocket(s);
-
-  let is_connected = false;
-  let _ws: WebSocket | null = null
-
-  wss.on('connection', async (ws, _req) => {
-    if (is_connected) {
-      _ws?.terminate();
-    }
-    _ws = ws;
-
-    is_connected = true;
-
-    ws.on('close', () => {
-      is_connected = false;
-    });
-    await sub.subscribe(REDIS_PUBLIC_CHANNEL, (message) => {
-      _ws?.send(message);
-    });
-  });
-})();
+db.serialize(async () => {
+	await query(
+		'CREATE TABLE IF NOT EXISTS backups (id INTEGER UNIQUE, name TEXT, date TEXT, size INTEGER)',
+		'run'
+	);
+});
+
+// serve backups without authentication middleware
+app.get('/api/backup/:id', async (req, res) => {
+	try {
+		const fullPath = await getBackup(req.params['id']);
+		res.download(fullPath);
+	} catch(e) {
+		res.status(404).send(e instanceof Error ? e.message : String(e));
+	}
+});
+
+// get the current server status
+app.get('/api/ping', async (_, res) => {
+	res.send('pong');
+});
+
+app.get('/api/log', (_, res) => {
+	res.sendFile(path.join(SERVER_ROOT_PATH, 'logs', 'latest.log'));
+});
+
+const MCServer = new MinecraftServer();
+
+MCServer.onStatusUpdate = async (status: ServerStatus) => {
+	log(`Server status updated: ${status}`);
+	if(status === ServerStatus.Online) {
+		wss.send(WSMessageType.Message, '@everyone The server is 🟢 ONLINE.');
+
+		setInterval(onlineStatusUpdate, 10000);
+
+		// setTimeout(() => {
+		// 	exec('bash /home/mcserver/ftp/server/server_api/move_markers.sh');
+		// }, 90000);
+	}
+	onlineStatusUpdate();
+}
+
+let onlineStatusInterval;
+const onlineStatusUpdate = async () => {
+	const update: MinecraftStatusUpdate = {
+		status: MCServer.getStatus(),
+		numPlayers: 0,
+		maxPlayers: 0,
+	};
+	if(MCServer.getStatus() === ServerStatus.Online) {
+		try {
+			const srv = await MCServer.getMinecraftStatus();
+			update.numPlayers = srv.players.online;
+			update.maxPlayers = srv.players.max;
+		} catch(e) {}
+	}
+	else {
+		clearInterval(onlineStatusInterval);
+	}
+	wss.send<MinecraftStatusUpdate>(WSMessageType.MinecraftStatusUpdate, update);
+}
+
+let computerStatus = ServerStatus.Online;
+const computerStatusUpdate = async () => {
+	const update: ComputerStatusUpdate = {
+		status: computerStatus,
+		cpuUsage: 0,
+		diskTotal: 0,
+		diskUsed: 0,
+		ramTotal: 0,
+		ramUsed: 0,
+	};
+	try {
+		update.cpuUsage = await osutil.cpu.usage(5000);
+		update.ramTotal = osutil.mem.totalMem();
+		update.ramUsed = (await osutil.mem.used()).usedMemMb * 1024 * 1024; //result was in MB
+		update.diskTotal = parseFloat((await osutil.drive.used('/')).totalGb);
+		update.diskUsed = parseFloat((await osutil.drive.used('/')).usedGb);
+	} catch(e) { }
+	wss.send<ComputerStatusUpdate>(WSMessageType.ComputerStatusUpdate, update);
+}
+let computerUpdateInterval = setInterval(computerStatusUpdate, 10000);
+
+// apply authentication middleware
+app.use(authentication);
+
+// get the current server status
+app.get('/api/status', async (_, res) => {
+	await onlineStatusUpdate();
+	res.send(MCServer.getStatus());
+});
+
+// start the server
+app.post('/api/start', async (_, res) => {
+	if(MCServer.getStatus() !== ServerStatus.Offline) {
+		res.send(`The server is not ready. Status: ${MCServer.getStatus()}.`);
+		return;
+	}
+	log('Starting Minecraft server...');
+	wss.send(WSMessageType.Message, 'Starting Minecraft server.');
+	try {
+		await MCServer.start();
+		res.send('OK');
+	} catch(e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		wss.send(WSMessageType.Message, 'Failed to start Minecraft server: ' + msg);
+		res.status(500).send(msg);
+	}
+});
+
+// stop the server but keep the machine running
+app.post('/api/stop', async (req, res) => {
+	log('Gracefully stopping the server.');
+	wss.send(WSMessageType.Message, 'Gracefully stopping the server.');
+	try {
+		await MCServer.stop();
+		wss.send(WSMessageType.Message, 'The server was stopped.');
+		if(req.body['autobackup'] ?? true) {
+			log('Backing up the world.');
+			wss.send(WSMessageType.Message, 'Backing up the world.');
+			await autoBackupMCWorld();
+		}
+		res.send('OK');
+	} catch(e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		wss.send(WSMessageType.Message, 'Failed to stop the server: ' + msg);
+		res.status(500).send(msg);
+	}
+});
+
+// restart the MC server
+app.post('/api/restart', async (req, res) => {
+	if(MCServer.getStatus() !== ServerStatus.Online) {
+		res.send("Couldn't restart the server. Make sure the server is running.");
+		return;
+	}
+
+	log('Restarting the server.');
+	wss.send(WSMessageType.Message, 'Restarting the server.');
+	try {
+		await MCServer.stop();
+		wss.send(WSMessageType.Message, 'The server was stopped. Restarting...');
+	} catch(e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		wss.send(WSMessageType.Message, 'Failed to restart the server: ' + msg);
+		res.status(500).send(msg);
+		return;
+	}
+
+	log('Starting Minecraft server...');
+	wss.send(WSMessageType.Message, 'Starting Minecraft server.');
+	try {
+		await MCServer.start();
+		res.send('OK');
+	} catch(e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		wss.send(WSMessageType.Message, 'Failed to start Minecraft server: ' + msg);
+		res.status(500).send(msg);
+	}
+});
+
+app.post('/api/shutdown', async (req, res) => {
+	if(MCServer.getStatus() === ServerStatus.Stopping) {
+		res.send('The server is stopping.');
+		return;
+	}
+
+	if(MCServer.getStatus() !== ServerStatus.Offline) {
+		log('Gracefully stopping the server.');
+		wss.send(WSMessageType.Message, 'Gracefully stopping the server.');
+		try {
+			await MCServer.stop();
+			wss.send(WSMessageType.Message, 'The server was stopped.');
+			if(req.body['autobackup'] ?? true) {
+				log('Backing up the world.');
+				wss.send(WSMessageType.Message, 'Backing up the world.');
+				await autoBackupMCWorld();
+			}
+		} catch(e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			wss.send(WSMessageType.Message, 'Failed to stop the server: ' + msg);
+		}
+	}
+
+	wss.send(WSMessageType.Message, 'Shutting down the computer.');
+	
+	if(shutdown()) {
+		computerStatus = ServerStatus.Stopping;
+		clearInterval(computerUpdateInterval);
+		computerStatusUpdate();
+	}
+
+	res.send('OK');
+});
+
+// send a command using RCON
+app.post('/api/command', async (req, res) => {
+	if(!(MCServer.getStatus() === ServerStatus.Online || MCServer.getStatus() === ServerStatus.Starting)) {
+		res.send({ error: true, message: "Cannot execute the command, the server is not running." });
+		return;
+	}
+	const command = req.body['command'];
+	if(!command) {
+		res.send({ error: true, message: 'No command provided.' });
+		return;
+	}
+	try {
+		const result = await MCServer.sendCommand(command);
+		res.send({ error: false, message: result });
+		wss.send(WSMessageType.Message, `Command '${command}' was executed, response: ${result}`);
+	}
+	catch(e) {
+		error(e);
+		res.send({ error: true, message: `Failed to execute command: '${command}'.` });
+	}
+});
+
+// get all available backups
+app.get('/api/backups', async (_, res) => {
+	try {
+		const result = await query('SELECT * FROM backups').catch((e) => {
+			throw e;
+		});
+		res.json({ error: false, result });
+	} catch(e) {
+		res.json({ error: true, message: 'Failed to query database.' });
+	}
+});
+
+// create a backup of the current world
+app.post('/api/backup', async (_, res) => {
+	if(MCServer.getStatus() !== ServerStatus.Offline) {
+		res.send('Cannot create backup when the server is running.');
+		return;
+	}
+
+	log('Backing up the world.');
+	wss.send(WSMessageType.Message, 'Backing up the world.');
+	try {
+		const id = await createBackup();
+		log(`Backup '${id}' was created.`);
+		wss.send(WSMessageType.Message, `Backup '${id}' was created.`);
+		res.send('OK');
+	} catch(e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		error(`Failed to create the backup: ${msg}`);
+		wss.send(WSMessageType.Error, `Failed to create the backup: ${msg}`);
+		res.send(msg);
+	}
+});
+
+// load a backup
+app.post('/api/backup/load/:id', async (req, res) => {
+	if(MCServer.getStatus() !== ServerStatus.Offline) {
+		res.send('Cannot load backup when the server is running. Stop it first.');
+		return;
+	}
+	const id = req.params['id'];
+	log(`Loading backup '${id}'.`);
+	wss.send(WSMessageType.Message, `Loading backup '${id}'.`);
+	try {
+		await loadBackup(id);
+		log(`The backup '${id}' was loaded.`);
+		wss.send(WSMessageType.Message, `The backup '${id}' was loaded.`);
+		res.send('OK');
+	} catch(e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		error(`Failed to load the backup: ${msg}`);
+		wss.send(WSMessageType.Error, `Failed to load the backup: ${msg}`);
+		res.send(msg);
+	}
+});
+
+const s = app.listen(SERVER_PORT, () => {
+	log(`Server listening at http://localhost:${SERVER_PORT}`);
+});
+
+export const wss = new WebSocketHandler(s, '/api/ws');

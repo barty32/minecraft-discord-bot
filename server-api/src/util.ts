@@ -1,63 +1,26 @@
-import { ChildProcessWithoutNullStreams, exec, spawn } from 'child_process';
-import { BACKUP_PATH, MC_SERVER_NAME } from './constants';
+import { exec, spawn } from 'child_process';
+import { REMOTE_SHUTDOWN_ENABLED, SECRET_KEY } from './constants.js';
 
-export const shutdown = () => exec('shutdown now');
-export const makeBackupName = (id: string) => MC_SERVER_NAME + id;
 
-export const createBackup = (
-  filename?: string
-): [string, ChildProcessWithoutNullStreams] => {
-  if (filename === undefined) {
-    filename = makeBackupName(Date.now().toString());
-  }
-
-  const fullName = `${filename}.tar.gz`;
-  return [
-    fullName,
-    spawn('tar', ['-zcf', BACKUP_PATH + fullName, MC_SERVER_NAME]),
-  ];
-};
-
-export interface Server {
-  status: ServerStatus;
-  getStatus: () => string;
-  process?: ChildProcessWithoutNullStreams;
-  start: () => void;
-  stop: () => boolean;
-}
-
-export enum ServerStatus {
-  Online,
-  Offline,
-  Starting,
-  Stopping,
-}
-
-const MCServerParams = [
-  '-Xmx7G',
-  '-XX:ParallelGCThreads=2',
-  '-XX:+UseConcMarkSweepGC',
-  '-XX:+UseParNewGC',
-  '-jar',
-  'forge-server.jar',
-  '-Dfml.readTimeout=180',
-  '-Dfml.queryResult=confirm',
-  '-Dlog4j.configurationFile=log4j2_112-116.xml',
-  'nogui',
-];
-export const startMCServerProcess = () => {
-  return spawn('java', MCServerParams);
-};
+export const shutdown = () => REMOTE_SHUTDOWN_ENABLED && exec('shutdown now');
 
 export const spawnSyncProcess = (command: string, args: string[]) => {
-  return new Promise((res, rej) => {
-    const process = spawn(command, args);
-    process
-      .on('close', res)
-      .on('disconnect', res)
-      .on('exit', res)
-      .on('error', rej);
-  });
+	return new Promise((res, rej) => {
+		const process = spawn(command, args);
+		process
+		.on('close', res)
+		.on('disconnect', res)
+		.on('exit', res)
+		.on('error', rej);
+	});
+};
+
+export function authentication(req: any, res: any, next: any) {
+	const key = req.header('key');
+	if(!key || key !== SECRET_KEY)
+		return res.status(401).send('Not authenticated.');
+
+	next();
 };
 
 const formatLog = (msg: string) => `[${new Date().toISOString()}] - ${msg}`;
