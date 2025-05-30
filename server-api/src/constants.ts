@@ -1,10 +1,10 @@
 import path from 'path';
 
 export const SERVER_ADDRESS = 'localhost';
-export const SERVER_PORT = process.env.SERVER_PORT || 25566;
-export const MINECRAFT_PORT = process.env.MINECRAFT_PORT || 25565;
+export const SERVER_PORT = parseInt(process.env.SERVER_PORT || '25566');
+export const MINECRAFT_PORT = parseInt(process.env.MINECRAFT_PORT || '25565');
 export const MC_SERVER_NAME = process.env.MINECRAFT_WORLD_NAME || 'minecraft_server';
-export const RCON_PORT = process.env.RCON_PORT || 25575;
+export const RCON_PORT = parseInt(process.env.RCON_PORT || '25575');
 export const RCON_PASSWORD = process.env.RCON_PASSWORD || '';
 export const SECRET_KEY = process.env.SECRET_KEY || '';
 export const REMOTE_SHUTDOWN_ENABLED = process.env.REMOTE_SHUTDOWN_ENABLED === 'true';
