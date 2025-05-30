@@ -1,0 +1,9 @@
+[Unit]
+Description=Minecraft Discord bot service
+
+[Service]
+Type=simple
+ExecStart=/bin/node /usr/local/minecraft-discord-bot/discord-bot/dist/index.js
+
+[Install]
+WantedBy=multi-user.target

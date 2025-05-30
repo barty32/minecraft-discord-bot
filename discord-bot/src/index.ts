@@ -1,543 +1,231 @@
-import { Client, GatewayIntentBits, EmbedBuilder, TextChannel } from 'discord.js';
-import dotenv from 'dotenv';
+import fs from 'node:fs';
+import path from 'node:path';
 import WS from 'ws';
-import ping from 'ping';
-import wol from 'wol';
+import 'dotenv/config';
 import {
-	SERVER_ADDRESS,
-	SERVER_API,
-	SERVER_MAC,
-	WS_ADDRESS,
-} from './constants';
-import { WSMessage } from './types';
+	Client,
+	GatewayIntentBits,
+	EmbedBuilder,
+	TextChannel,
+	Events,
+	Collection,
+	MessageFlags
+} from 'discord.js';
+import { ComputerStatusUpdate, MinecraftStatusUpdate, ServerStatus, SlashCommand, WSMessage, WSMessageType } from './types.js';
+import { isServerAlive, sendControlPanel, sendRequest } from './util.js';
+import { connectToWS } from './websocket.js';
 
-dotenv.config();
 
+const slashCommands = new Collection<string, SlashCommand>();
 const client = new Client({
-	intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+	intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages], //GatewayIntentBits.MessageContent
 });
 
-(async () => {
+export let computerStatus: ComputerStatusUpdate = {
+	status: ServerStatus.Offline,
+	cpuUsage: 0,
+	diskTotal: 0,
+	diskUsed: 0,
+	ramTotal: 0,
+	ramUsed: 0,
+};
+
+export let serverStatus: MinecraftStatusUpdate = {
+	status: ServerStatus.Offline,
+	numPlayers: 0,
+	maxPlayers: 0,
+};
+
+client.on(Events.Error, (e) => {
+	console.error('Discord client error:', e);
+});
+
+client.on(Events.Warn, (w) => {
+	console.warn('Discord client warning:', w);
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+	if(interaction.isChatInputCommand()) {
+		const command = slashCommands.get(interaction.commandName);
+		if(!command) {
+			console.error(`No command matching '${interaction.commandName}' was found.`);
+			return;
+		}
+		try {
+			await command.execute(interaction);
+		} catch(error) {
+			console.error(error);
+			if(interaction.replied || interaction.deferred) {
+				await interaction.followUp({ content: 'There was an error while executing this command!', flags: MessageFlags.Ephemeral });
+			} else {
+				await interaction.reply({ content: 'There was an error while executing this command!', flags: MessageFlags.Ephemeral });
+			}
+		}
+	}
+	else if(interaction.isButton()) {
+		const command = slashCommands.get(interaction.customId);
+		if(!command) {
+			console.error(`No command matching '${interaction.customId}' was found.`);
+			return;
+		}
+		try {
+			await command.execute(interaction);
+		} catch(error) {
+			console.error(error);
+			if(interaction.replied || interaction.deferred) {
+				await interaction.followUp({ content: 'There was an error while executing this command!', flags: MessageFlags.Ephemeral });
+			} else {
+				await interaction.reply({ content: 'There was an error while executing this command!', flags: MessageFlags.Ephemeral });
+			}
+		}
+	}
+});
+
+export let controlChannel: TextChannel | null = null;
+export let commandChannel: TextChannel | null = null;
+export let logChannel: TextChannel | null = null;
+
+client.once(Events.ClientReady, async () => {
 	// wait for client to connect
-	await new Promise<void>((res, rej) => {
-		client.on('error', rej);
-		client.on('ready', (_) => res());
-	});
+	// await new Promise<void>((res, rej) => {
+	// 	client.on('error', rej);
+	// 	client.on('ready', (_) => res());
+	// });
 
 	console.log(`Logged in as ${client.user?.tag}!`);
 
-	let log_channel: TextChannel;
-	{
-		const result = client.channels.cache.find(
-			(channel) => channel.id === process.env.LOG_CHANNEL
-		);
-		if (result) {
-			log_channel = result as TextChannel;
+	try {
+		const cch = await client.channels.fetch(process.env.CONTROL_CHANNEL ?? '');
+		if(cch instanceof TextChannel) {
+			controlChannel = cch;
 		}
-	}
-	let command_channel: TextChannel;
-	{
-		const result = client.channels.cache.find(
-			(channel) => channel.id === process.env.COMMAND_CHANNEL
-		);
-		if (result) {
-			command_channel = result as TextChannel;
-		}
+	} catch(e) {
+		console.error('Failed to fetch control channel:', );
 	}
 
-	const isServerAlive = async () => {
-		return await new Promise((resolve) => {
-			ping.sys.probe(SERVER_ADDRESS, (isAlive) => {
-				if (isAlive) {
-					fetch(SERVER_API + '/api/status', {
-						headers: {
-							key: process.env.SECRET_KEY!,
-						},
-					})
-						.then(() => resolve(true))
-						.catch((e) => resolve(false));
-					return;
-				}
-				resolve(false);
-			});
-		});
-	};
-
-	let wsConnection: WS | null = null;
-	let isWSOpen = false;
-
-	const establishWSConnection = async () => {
-		return new Promise<WS>((res, rej) => {
-			const retry_rate = 15 * 1000; // 15 seconds
-			const call_limit = 10;
-			let times_called = 0;
-			const attempt = () => {
-				times_called++;
-
-				if (times_called > call_limit) {
-					rej();
-					return;
-				}
-
-				const ws = new WS(WS_ADDRESS, {
-					headers: { key: process.env.SECRET_KEY },
-				});
-
-				ws.on('open', () => {
-					clearInterval(timer);
-					isWSOpen = true;
-					res(ws);
-				});
-			};
-
-			attempt();
-			const timer = setInterval(attempt, retry_rate);
-		});
-	};
-
-	const connectToWS = async () => {
-		if (wsConnection || isWSOpen) return;
-
-		const embed = new EmbedBuilder()
-			.setTitle('Connecting')
-			.setDescription(`Response to command: ${_cmd}, issued by @${_usr}.`)
-			.addFields([{name: '\u200B', value: 'Connecting to the server.'}]);
-		command_channel.send({
-			embeds: [embed],
-		});
-
-		wsConnection = await establishWSConnection().catch(() => {
-			return null;
-		});
-		if (!wsConnection) {
-			const embed = new EmbedBuilder()
-				.setColor('#FF0000')
-				.setTitle('Error')
-				.setDescription('Fatal error occured while connecting to the server.');
-
-			command_channel.send({ embeds: [embed] });
-			return;
+	try {
+		const cmdch = await client.channels.fetch(process.env.COMMAND_CHANNEL ?? '');
+		if(cmdch instanceof TextChannel) {
+			commandChannel = cmdch;
 		}
-		new Promise((_, rej) => {
-			wsConnection?.on('error', () => rej()).on('close', () => rej());
-		}).catch(async () => {
-			isWSOpen = false;
-			wsConnection?.terminate();
-			wsConnection?.removeAllListeners('message');
-			wsConnection = null;
-		});
+	} catch(e) {
+		console.error('Failed to fetch command channel:', );
+	}
 
-		{
-			const embed = new EmbedBuilder()
-				.setTitle('Connected')
-				.setDescription(`Response to command: ${_cmd}, issued by @${_usr}.`)
-				.addFields([{name: '\u200B', value: 'Connected to the server.'}]);
-			command_channel.send({
-				embeds: [embed],
-			});
+	try {
+		const lch = await client.channels.fetch(process.env.LOG_CHANNEL ?? '');
+		if(lch instanceof TextChannel) {
+			logChannel = lch;
 		}
+	} catch(e) {
+		console.error('Failed to fetch log channel:');
+	}
 
-		wsConnection!.on('message', (data) => {
-			const parsed = JSON.parse(data.toString()) as WSMessage<any>;
-			switch (parsed.code) {
-				case 1001:
-					if (log_channel) {
-						const max_message_len = 2000;
-						if (
-							parsed.payload.includes(
-								'Potentially Dangerous alternative prefix'
-							) ||
-							parsed.payload.includes(
-								'Catching dependency model net.minecraftforge.client.model.ModelLoader'
-							)
-						)
-							return;
+	if(await isServerAlive()) {
+		computerStatus.status = ServerStatus.Online;
+		await connectToWS();
+		await sendRequest('GET', '/api/status');
+	}
 
-						let final_payload = [parsed.payload];
-						if (final_payload[0].length > max_message_len) {
-							const regexp = new RegExp(`.{1,${max_message_len}}`, 'g');
-							final_payload = final_payload[0].match(regexp);
-						}
-						for (const m of final_payload) {
-							log_channel.send({ content: '```' + m + '```' });
-						}
-					}
-					break;
-				case 1002:
-					if (parsed.payload === 'ONLINE') {
-						//starting = false;
-						const embed = new EmbedBuilder()
-							.setColor('#00ff00')
-							.setTitle('🟢 Server ONLINE')
-							.setDescription('@everyone The server is online!')
-							.addFields([{name: '\u200B', value: 'You can now join it: **minecraft.janstaffa.cz**.'}]);
-						command_channel.send({ embeds: [embed] });
-					}
-					break;
-				case 1003:
-					{
-						const embed = new EmbedBuilder()
-							.setColor('#000000')
-							.setTitle('Message')
-							.setDescription(
-								`Response to command: ${_cmd}, issued by @${_usr}.`
-							)
-							.addFields([{name: '\u200B', value: parsed.payload}]);
+	await sendControlPanel(serverStatus, computerStatus);
 
-						command_channel.send({ embeds: [embed] });
-					}
-					break;
-				case 1004:
-					{
-						const embed = new EmbedBuilder()
-							.setColor('#FF0000')
-							.setTitle('Error')
-							.setDescription(
-								`Response to command: ${_cmd}, issued by @${_usr}.`
-							)
-							.addFields([{name: '\u200B', value: parsed.payload}]);
+	setInterval(async () => {
+		if(await isServerAlive()) {
+			computerStatus.status = ServerStatus.Online;
+		}
+		else if(computerStatus.status !== ServerStatus.Starting){ 
+			computerStatus.status = ServerStatus.Offline;
+		}
+		await sendControlPanel(serverStatus, computerStatus);
+	}, 10000);
+});
 
-						command_channel.send({ embeds: [embed] });
-					}
-					break;
-			}
-		});
-	};
+export async function handleWSMessage(data: WS.RawData) {
+	const parsed = JSON.parse(data.toString()) as WSMessage<any>;
+	console.log('Received message from WS: ', parsed.content);
+	switch(parsed.type) {
+		case WSMessageType.MinecraftLog:
+			/*if(log_channel) {
+				const max_message_len = 2000;
+				if(
+					parsed.payload.includes(
+						'Potentially Dangerous alternative prefix'
+					) ||
+					parsed.payload.includes(
+						'Catching dependency model net.minecraftforge.client.model.ModelLoader'
+					)
+				)
+					return;
 
-	let _cmd: string | null = null,
-		_usr: string | null = null;
-	//let starting = false;
-	client.on('messageCreate', async (message) => {
-		const sendRequest = (path: string, method: string, body?: any) => {
-			return fetch(SERVER_API + path, {
-				method,
-				headers: {
-					key: process.env.SECRET_KEY!,
-				},
-				body,
-			})
-				.then((response) => response.text())
-				.then((response) => {
-					if (response !== 'OK') {
-						const embed = new EmbedBuilder()
-							.setColor('#ff0000')
-							.setTitle('Error')
-							.setDescription(response);
-						message.reply({
-							embeds: [embed],
-						});
-						return;
-					}
-					return response;
-				})
-				.catch((e) => {
-					console.error(e);
-					const embed = new EmbedBuilder()
-						.setColor('#ff0000')
-						.setTitle('Error')
-						.setDescription('Failed to send command. Please try again.');
-					message.reply({
-						embeds: [embed],
-					});
-				});
-		};
+				let final_payload = [parsed.payload];
+				if(final_payload[0].length > max_message_len) {
+					const regexp = new RegExp(`.{1,${max_message_len}}`, 'g');
+					final_payload = final_payload[0].match(regexp);
+				}
+				for(const m of final_payload) {
+					log_channel.send({ content: '```' + m + '```' });
+				}
+			}*/
+			break;
+		case WSMessageType.MinecraftStatusUpdate:
+			serverStatus = (parsed as WSMessage<MinecraftStatusUpdate>).content;
+			sendControlPanel(serverStatus, computerStatus);
+			// if(parsed.payload === 'ONLINE') {
+			// 	//starting = false;
+			// 	const embed = new EmbedBuilder()
+			// 		.setColor('#00ff00')
+			// 		.setTitle('🟢 Server ONLINE')
+			// 		.setDescription('@everyone The server is online!')
+			// 		.addFields([{ name: '\u200B', value: 'You can now join it: **minecraft.janstaffa.cz**.' }]);
+			// 	command_channel.send({ embeds: [embed] });
+			// }
+			break;
 
-		if (message.channelId !== process.env.COMMAND_CHANNEL) return;
-		const { content } = message;
+		case WSMessageType.ComputerStatusUpdate:
+			computerStatus = (parsed as WSMessage<ComputerStatusUpdate>).content;
+			sendControlPanel(serverStatus, computerStatus);
+			break;
 
-		if (content.startsWith('!')) {
-			const raw = content.slice(1);
-			const words = raw.split(' ');
-			if (words.length === 0) {
+		case WSMessageType.Message:
+			{
 				const embed = new EmbedBuilder()
-					.setColor('#ff0000')
+					.setTitle('Message')
+					//.setDescription(`Response to command: ${_cmd}, issued by @${_usr}.`)
+					.addFields([{ name: '\u200B', value: parsed.content }]);
+				commandChannel?.send({ embeds: [embed] });
+			}
+			break;
+		case WSMessageType.Error:
+			console.log('Received error from WS: ', parsed.content);
+			{
+				const embed = new EmbedBuilder()
+					.setColor('#FF0000')
 					.setTitle('Error')
-					.setDescription('No command specified.');
-				message.reply({ embeds: [embed] });
-				return;
+					//.setDescription(`Response to command: ${_cmd}, issued by @${_usr}.`)
+					.addFields([{ name: '\u200B', value: parsed.content }]);
+				commandChannel?.send({ embeds: [embed] });
 			}
-			const command = words[0];
+			break;
+	}
+}
 
-			_cmd = command;
-			_usr = message.author.username;
-
-			let isAlive = await isServerAlive();
-
-			if (command !== 'start' && command !== 'status') {
-				if (!isAlive) {
-					const embed = new EmbedBuilder()
-						.setColor('#ff0000')
-						.setTitle('Error')
-						.setDescription('Server is offline.');
-					message.reply({
-						embeds: [embed],
-					});
-					return;
-				}
-			}
-
-			if (isAlive && !isWSOpen) {
-				await connectToWS();
-			}
-
-			switch (command) {
-				case 'start': {
-					/*if (starting) {
-						const embed = new EmbedBuilder()
-							.setColor('#FF0000')
-							.setTitle('Error')
-							.setDescription('The server is already starting.');
-
-						message.channel.send({ embeds: [embed] });
-						return;
-					}
-					starting = true;
-		*/
-					log_channel.send('**Server starting...**');
-					if (!isAlive) {
-						const embed = new EmbedBuilder()
-							.setTitle('Server starting')
-							.setDescription(
-								`Response to command: ${_cmd}, issued by @${_usr}.`
-							)
-							.addFields([{name: '\u200B', value: 'Starting the machine.'}]);
-						message.channel.send({
-							embeds: [embed],
-						});
-
-						await wol.wake(SERVER_MAC, (_err, _res) => {});
-
-						await new Promise((resolve, _) => {
-							const int = setInterval(async () => {
-								const alive = await isServerAlive();
-								if (alive) {
-									clearInterval(int);
-									isAlive = true;
-									return resolve(true);
-								}
-							}, 2000);
-						});
-					}
-
-					if (isAlive && !isWSOpen) {
-						await connectToWS();
-					}
-
-					sendRequest('/api/start', 'POST');
-					break;
-				}
-
-				case 'cmd':
-					if (words.length < 2) {
-						const embed = new EmbedBuilder()
-							.setColor('#ff0000')
-							.setTitle('Error')
-							.setDescription('No command specified.');
-						message.reply({
-							embeds: [embed],
-						});
-						return;
-					}
-					const cmd = words.slice(1, words.length).join(' ');
-
-					const cmd_body = {
-						command: cmd,
-					};
-
-					fetch(SERVER_API + '/api/command', {
-						method: 'POST',
-						body: JSON.stringify(cmd_body),
-						headers: {
-							key: process.env.SECRET_KEY!,
-							'Content-Type': 'application/json',
-						},
-					})
-						.then((response) => response.json())
-						.then((response) => {
-							if (response.error === 1) {
-								const embed = new EmbedBuilder()
-									.setColor('#ff0000')
-									.setTitle('Error')
-									.setDescription(response.message);
-								message.reply({
-									embeds: [embed],
-								});
-								return;
-							}
-							const embed = new EmbedBuilder()
-								.setColor('#000000')
-								.setTitle('Message')
-								.setDescription(
-									`Response to command: ${command}, issued by @${message.author.username}.`
-								)
-								.addFields([{name: '\u200B', value: response.result}]);
-							message.channel.send({
-								embeds: [embed],
-							});
-						})
-						.catch((_) => {
-							const embed = new EmbedBuilder()
-								.setColor('#ff0000')
-								.setTitle('Error')
-								.setDescription('Failed to send command: ' + cmd);
-							message.reply({
-								embeds: [embed],
-							});
-						});
-					break;
-				case 'status':
-					if (!isAlive) {
-						const embed = new EmbedBuilder()
-							.setTitle('Status')
-							.setDescription('POWERED DOWN 🔴');
-						message.reply({
-							embeds: [embed],
-						});
-						return;
-					}
-
-					fetch(SERVER_API + '/api/status', {
-						headers: {
-							key: process.env.SECRET_KEY!,
-						},
-					})
-						.then((response) => response.text())
-						.then((response) => {
-							let new_status = 'error';
-							switch (response) {
-								case 'OFFLINE':
-									new_status = 'OFFLINE  🔴';
-									break;
-								case 'STARTING':
-									new_status = 'STARTING  🟠';
-									break;
-								case 'STOPPING':
-									new_status = 'STOPPING 🟠';
-									break;
-								case 'ONLINE':
-									new_status = 'ONLINE  🟢';
-									break;
-							}
-							const embed = new EmbedBuilder()
-								.setTitle('Status')
-								.setDescription(new_status);
-
-							message.reply({
-								embeds: [embed],
-							});
-						})
-						.catch((_) => {
-							const embed = new EmbedBuilder()
-								.setColor('#ff0000')
-								.setTitle('Error')
-								.setDescription('Failed to get server status.');
-							message.reply({
-								embeds: [embed],
-							});
-						});
-
-					break;
-
-				case 'loadbackup':
-					if (words.length < 2) {
-						const embed = new EmbedBuilder()
-							.setColor('#ff0000')
-							.setTitle('Error')
-							.setDescription(
-								'No backup specified. For a list of backups run: *!listbackups*'
-							);
-						message.reply({
-							embeds: [embed],
-						});
-						return;
-					}
-					const backup_id = words.slice(1, words.length).join(' ');
-
-					sendRequest('/api/backup/load/' + backup_id, 'POST');
-					break;
-				case 'listbackups':
-					fetch(SERVER_API + '/api/backups', {
-						headers: {
-							key: process.env.SECRET_KEY!,
-						},
-					})
-						.then((response) => response.json())
-						.then((response) => {
-							if (response.error === 1) {
-								const embed = new EmbedBuilder()
-									.setColor('#ff0000')
-									.setTitle('Error')
-									.setDescription(response.message);
-								message.reply({
-									embeds: [embed],
-								});
-								return;
-							}
-
-							/*let content = `
-							+---------------+-------------------------+----------+
-							|id             |date                     |          |
-							+===============+=========================+==========+
-							`;*/
-
-							const embed = new EmbedBuilder()
-								.setColor('#000000')
-								.setTitle('Message')
-								.setDescription(
-									`Response to command: ${command}, issued by @${message.author.username}.`
-								);
-
-							if (response.result.length === 0) {
-								embed.addFields([{name: '\u200B', value: 'No backups were found.'}]);
-								message.channel.send({
-									embeds: [embed],
-								});
-								return;
-							}
-							for (const backup of response.result) {
-								const id = backup.id.toString();
-								const date = backup.date;
-
-								embed.addFields([{
-									name: '\u200B',
-									value: `id: ${id} | date: ${date} | [download](http://minecraft.janstaffa.cz:25566/api/backup/${id})`
-								}]);
-								/*content += `
-								|${id + " ".repeat(15 - id.length)}|${date + " ".repeat(25 - date.length)}| [download](http://minecraft.janstaffa.cz:25566/api/backup/${id}) |
-								+---------------+-------------------------+----------+
-								`;*/
-							}
-
-							message.channel.send({
-								embeds: [embed],
-							});
-						})
-						.catch((e) => {
-							console.error(e);
-							const embed = new EmbedBuilder()
-								.setColor('#ff0000')
-								.setTitle('Error')
-								.setDescription('Failed to list backups.');
-							message.reply({
-								embeds: [embed],
-							});
-						});
-					break;
-				case 'stop':
-				case 'shutdown':
-				case 'backup':
-				case 'restart':
-					sendRequest('/api/' + command, 'POST');
-					break;
-				default: {
-					const embed = new EmbedBuilder()
-						.setColor('#ff0000')
-						.setTitle('Error')
-						.setDescription('Invalid command: ' + command);
-					message.reply({ embeds: [embed] });
-				}
-			}
+const registerSlashCommands = async () => {
+	// Load and register slash commands
+	const commandsPath = path.join(import.meta.dirname, 'commands');
+	const commandFiles = fs.readdirSync(commandsPath)//.filter(file => file.endsWith('.js'));
+	for(const file of commandFiles) {
+		const filePath = path.join(commandsPath, file);
+		const command = await import(filePath);
+		// Set a new item in the Collection with the key as the command name and the value as the exported module
+		if('data' in command && 'execute' in command) {
+			console.log(`Registering slash command: '${command.data.name}'`);
+			slashCommands.set(command.data.name, command);
+		} else {
+			console.log(`[WARNING] The slash command at '${filePath}' is missing a required "data" or "execute" property.`);
 		}
-	});
-})();
+	}
+}
+
 client.login(process.env.TOKEN);
+
+registerSlashCommands();
