@@ -9,7 +9,7 @@ export const RCON_PASSWORD = process.env.RCON_PASSWORD || '';
 export const SECRET_KEY = process.env.SECRET_KEY || '';
 export const REMOTE_SHUTDOWN_ENABLED = process.env.REMOTE_SHUTDOWN_ENABLED === 'true';
 export const SERVER_ROOT_PATH = process.env.SERVER_ROOT_PATH || '/';
-export const BACKUP_PATH = path.join(SERVER_ROOT_PATH, 'backups');
+export const BACKUP_PATH = process.env.BACKUP_PATH || path.join(SERVER_ROOT_PATH, 'backups');
 export const DATA_PATH = path.join(SERVER_ROOT_PATH, MC_SERVER_NAME);
 export const JAVA_EXECUTABLE = process.env.JAVA_EXECUTABLE || 'java';
 export const MINECRAFT_SERVER_ARGS = [

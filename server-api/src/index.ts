@@ -1,11 +1,12 @@
 import cors from 'cors';
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import sqlite3 from 'sqlite3';
 import 'dotenv/config';
 import osutil from 'node-os-utils';
 import { ComputerStatusUpdate, MinecraftStatusUpdate, ServerStatus, WSMessageType } from './types.js';
-import { SERVER_PORT, SERVER_ROOT_PATH } from './constants.js';
+import { BACKUP_PATH, SERVER_PORT, SERVER_ROOT_PATH } from './constants.js';
 import { MinecraftServer } from './server.js';
 import { authentication, error, log, shutdown } from './util.js';
 import { WebSocketHandler } from './websocket.js';
@@ -22,7 +23,27 @@ app.use(express.urlencoded({ extended: true }));
 
 //sqlite setup
 const SQLite = sqlite3.verbose();
-export const db = new SQLite.Database(path.join(SERVER_ROOT_PATH, 'backups.db'));
+
+try {
+	if(!fs.existsSync(BACKUP_PATH)) {
+		fs.mkdirSync(BACKUP_PATH, { recursive: true });
+		log(`Created backup directory at ${BACKUP_PATH}`);
+	}
+} catch(e) {
+	error(`Failed to create backup directory: ${e instanceof Error ? e.message : String(e)}`);
+}
+
+const db = new SQLite.Database(path.join(BACKUP_PATH, 'backups.db'), (err) => {
+	if(!err) return;
+	error('Failed to connect to the database: ' + err);
+});
+
+db.serialize(async () => {
+	await query(
+		'CREATE TABLE IF NOT EXISTS backups (id INTEGER UNIQUE, name TEXT, date TEXT, size INTEGER)',
+		'run'
+	);
+});
 
 export function query(command: string, method: 'all' | 'run' | 'get' | 'each' | 'prepare' = 'all') {
 	return new Promise((resolve, reject) => {
@@ -35,13 +56,6 @@ export function query(command: string, method: 'all' | 'run' | 'get' | 'each' | 
 		});
 	});
 };
-
-db.serialize(async () => {
-	await query(
-		'CREATE TABLE IF NOT EXISTS backups (id INTEGER UNIQUE, name TEXT, date TEXT, size INTEGER)',
-		'run'
-	);
-});
 
 // serve backups without authentication middleware
 app.get('/api/backup/:id', async (req, res) => {
