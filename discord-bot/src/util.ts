@@ -8,11 +8,12 @@ import {
 	TextDisplayBuilder,
 	ContainerBuilder,
 	RGBTuple,
-	MessageFlags
+	MessageFlags,
+	Guild
 } from 'discord.js';
 import { JOIN_MESSAGE, SECRET_KEY, SERVER_ADDRESS, SERVER_API, SERVER_MAC } from './constants.js';
 import { ComputerStatusUpdate, MinecraftStatusUpdate, ServerStatus } from './types.js';
-import { computerStatus, controlChannel, serverStatus } from './index.js';
+import { computerStatus, controlChannel, serverStatus, slashCommandIds } from './index.js';
 
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -23,6 +24,18 @@ export function formatSize(size: number) {
 	if(size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
 	if(size < 1024 * 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 	return `${(size / (1024 * 1024 * 1024 * 1024)).toFixed(2)} TB`;
+}
+
+export function formatCommandMention(command: string) {
+	//the ids need to be fetched from the Discord API, that is done in ClientReady handler (index.ts)
+	try {
+		const id = slashCommandIds.get(command);
+		if(!id)
+			throw '';
+		return `</${command}:${id}>`;
+	} catch(e) {
+		return `/${command}`;
+	}
 }
 
 function formatStatus(status: ServerStatus) {
@@ -170,7 +183,12 @@ export async function sendControlPanel(serverStatus: MinecraftStatusUpdate, comp
 	}
 }
 
-export async function sendRequest(method: 'GET' | 'POST' | 'DELETE' | 'PUT', path: string, body?: any) {
+export async function sendRequest(
+	method: 'GET' | 'POST' | 'DELETE' | 'PUT',
+	path: string,
+	author: string | null = null,
+	data?: any
+) {
 	return fetch(SERVER_API + path, {
 		method,
 		headers: {
@@ -178,7 +196,10 @@ export async function sendRequest(method: 'GET' | 'POST' | 'DELETE' | 'PUT', pat
 			//'Accept': 'application/json',
 			key: SECRET_KEY,
 		},
-		body,
+		body: method !== 'GET' ? JSON.stringify({
+			author,
+			data,
+		}) : undefined,
 	}).then((response) => response.text());
 }
 

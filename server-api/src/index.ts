@@ -137,39 +137,44 @@ app.get('/api/status', async (_, res) => {
 });
 
 // start the server
-app.post('/api/start', async (_, res) => {
+app.post('/api/start', async (req, res) => {
 	if(MCServer.getStatus() !== ServerStatus.Offline) {
 		res.send(`The server is not ready. Status: ${MCServer.getStatus()}.`);
 		return;
 	}
+
+	const command = 'start';
+	const author = req.body['author'];
 	log('Starting Minecraft server...');
-	wss.send(WSMessageType.Message, 'Starting Minecraft server.');
+	wss.send(WSMessageType.Message, 'Starting Minecraft server.', command, author);
 	try {
 		await MCServer.start();
 		res.send('OK');
 	} catch(e) {
 		const msg = e instanceof Error ? e.message : String(e);
-		wss.send(WSMessageType.Message, 'Failed to start Minecraft server: ' + msg);
+		wss.send(WSMessageType.Error, 'Failed to start Minecraft server: ' + msg, command, author);
 		res.status(500).send(msg);
 	}
 });
 
 // stop the server but keep the machine running
 app.post('/api/stop', async (req, res) => {
+	const command = 'stop';
+	const author = req.body['author'];
 	log('Gracefully stopping the server.');
-	wss.send(WSMessageType.Message, 'Gracefully stopping the server.');
+	wss.send(WSMessageType.Message, 'Gracefully stopping the server.', command, author);
 	try {
 		await MCServer.stop();
-		wss.send(WSMessageType.Message, 'The server was stopped.');
-		if(req.body['autobackup'] ?? true) {
+		wss.send(WSMessageType.Message, 'The server was stopped.', command, author);
+		if(req.body['data']?.autobackup ?? true) {
 			log('Backing up the world.');
-			wss.send(WSMessageType.Message, 'Backing up the world.');
+			wss.send(WSMessageType.Message, 'Backing up the world.', command, author);
 			await autoBackupMCWorld();
 		}
 		res.send('OK');
 	} catch(e) {
 		const msg = e instanceof Error ? e.message : String(e);
-		wss.send(WSMessageType.Message, 'Failed to stop the server: ' + msg);
+		wss.send(WSMessageType.Error, 'Failed to stop the server: ' + msg, command, author);
 		res.status(500).send(msg);
 	}
 });
@@ -181,26 +186,28 @@ app.post('/api/restart', async (req, res) => {
 		return;
 	}
 
+	const command = 'restart';
+	const author = req.body['author'];
 	log('Restarting the server.');
-	wss.send(WSMessageType.Message, 'Restarting the server.');
+	wss.send(WSMessageType.Message, 'Restarting the server.', command, author);
 	try {
 		await MCServer.stop();
-		wss.send(WSMessageType.Message, 'The server was stopped. Restarting...');
+		wss.send(WSMessageType.Message, 'The server was stopped. Restarting...', command, author);
 	} catch(e) {
 		const msg = e instanceof Error ? e.message : String(e);
-		wss.send(WSMessageType.Message, 'Failed to restart the server: ' + msg);
+		wss.send(WSMessageType.Error, 'Failed to restart the server: ' + msg, command, author);
 		res.status(500).send(msg);
 		return;
 	}
 
 	log('Starting Minecraft server...');
-	wss.send(WSMessageType.Message, 'Starting Minecraft server.');
+	wss.send(WSMessageType.Message, 'Starting Minecraft server.', command, author);
 	try {
 		await MCServer.start();
 		res.send('OK');
 	} catch(e) {
 		const msg = e instanceof Error ? e.message : String(e);
-		wss.send(WSMessageType.Message, 'Failed to start Minecraft server: ' + msg);
+		wss.send(WSMessageType.Error, 'Failed to start Minecraft server: ' + msg, command, author);
 		res.status(500).send(msg);
 	}
 });
@@ -211,24 +218,26 @@ app.post('/api/shutdown', async (req, res) => {
 		return;
 	}
 
+	const command = 'shutdown';
+	const author = req.body['author'];
 	if(MCServer.getStatus() !== ServerStatus.Offline) {
 		log('Gracefully stopping the server.');
-		wss.send(WSMessageType.Message, 'Gracefully stopping the server.');
+		wss.send(WSMessageType.Message, 'Gracefully stopping the server.', command, author);
 		try {
 			await MCServer.stop();
-			wss.send(WSMessageType.Message, 'The server was stopped.');
-			if(req.body['autobackup'] ?? true) {
+			wss.send(WSMessageType.Message, 'The server was stopped.', command, author);
+			if(req.body['data']?.autobackup ?? true) {
 				log('Backing up the world.');
-				wss.send(WSMessageType.Message, 'Backing up the world.');
+				wss.send(WSMessageType.Message, 'Backing up the world.', command, author);
 				await autoBackupMCWorld();
 			}
 		} catch(e) {
 			const msg = e instanceof Error ? e.message : String(e);
-			wss.send(WSMessageType.Message, 'Failed to stop the server: ' + msg);
+			wss.send(WSMessageType.Error, 'Failed to stop the server: ' + msg, command, author);
 		}
 	}
 
-	wss.send(WSMessageType.Message, 'Shutting down the computer.');
+	wss.send(WSMessageType.Message, 'Shutting down the computer.', command, author);
 	
 	if(shutdown()) {
 		computerStatus = ServerStatus.Stopping;
@@ -245,7 +254,7 @@ app.post('/api/command', async (req, res) => {
 		res.send({ error: true, message: "Cannot execute the command, the server is not running." });
 		return;
 	}
-	const command = req.body['command'];
+	const command = req.body['data']?.command;
 	if(!command) {
 		res.send({ error: true, message: 'No command provided.' });
 		return;
@@ -253,7 +262,7 @@ app.post('/api/command', async (req, res) => {
 	try {
 		const result = await MCServer.sendCommand(command);
 		res.send({ error: false, message: result });
-		wss.send(WSMessageType.Message, `Command '${command}' was executed, response: ${result}`);
+		wss.send(WSMessageType.Message, `Command '${command}' was executed, response: ${result}`, 'cmd', req.body['author']);
 	}
 	catch(e) {
 		error(e);
@@ -274,23 +283,25 @@ app.get('/api/backups', async (_, res) => {
 });
 
 // create a backup of the current world
-app.post('/api/backup', async (_, res) => {
+app.post('/api/backup', async (req, res) => {
 	if(MCServer.getStatus() !== ServerStatus.Offline) {
 		res.send('Cannot create backup when the server is running.');
 		return;
 	}
 
+	const command = 'backup';
+	const author = req.body['author'];
 	log('Backing up the world.');
-	wss.send(WSMessageType.Message, 'Backing up the world.');
+	wss.send(WSMessageType.Message, 'Backing up the world.', command, author);
 	try {
 		const id = await createBackup();
 		log(`Backup '${id}' was created.`);
-		wss.send(WSMessageType.Message, `Backup '${id}' was created.`);
+		wss.send(WSMessageType.Message, `Backup '${id}' was created.`, command, author);
 		res.send('OK');
 	} catch(e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		error(`Failed to create the backup: ${msg}`);
-		wss.send(WSMessageType.Error, `Failed to create the backup: ${msg}`);
+		wss.send(WSMessageType.Error, `Failed to create the backup: ${msg}`, command, author);
 		res.send(msg);
 	}
 });
@@ -301,18 +312,20 @@ app.post('/api/backup/load/:id', async (req, res) => {
 		res.send('Cannot load backup when the server is running. Stop it first.');
 		return;
 	}
+	const command = 'loadbackup';
+	const author = req.body['author'];
 	const id = req.params['id'];
 	log(`Loading backup '${id}'.`);
-	wss.send(WSMessageType.Message, `Loading backup '${id}'.`);
+	wss.send(WSMessageType.Message, `Loading backup '${id}'.`, command, author);
 	try {
 		await loadBackup(id);
 		log(`The backup '${id}' was loaded.`);
-		wss.send(WSMessageType.Message, `The backup '${id}' was loaded.`);
+		wss.send(WSMessageType.Message, `The backup '${id}' was loaded.`, command, author);
 		res.send('OK');
 	} catch(e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		error(`Failed to load the backup: ${msg}`);
-		wss.send(WSMessageType.Error, `Failed to load the backup: ${msg}`);
+		wss.send(WSMessageType.Error, `Failed to load the backup: ${msg}`, command, author);
 		res.send(msg);
 	}
 });

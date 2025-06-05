@@ -11,12 +11,13 @@ import {
 	MessageFlags
 } from 'discord.js';
 import { ComputerStatusUpdate, MinecraftStatusUpdate, ServerStatus, SlashCommand, WSMessage, WSMessageType } from './types.js';
-import { DISCORD_COMMAND_CHANNEL_ID, DISCORD_CONTROL_CHANNEL_ID, DISCORD_TOKEN } from './constants.js';
-import { isServerAlive, sendControlPanel, sendRequest } from './util.js';
+import { DISCORD_COMMAND_CHANNEL_ID, DISCORD_CONTROL_CHANNEL_ID, DISCORD_GUILD_ID, DISCORD_TOKEN } from './constants.js';
+import { formatCommandMention, isServerAlive, sendControlPanel, sendRequest } from './util.js';
 import { connectToWS } from './websocket.js';
 
 
 const slashCommands = new Collection<string, SlashCommand>();
+export const slashCommandIds = new Collection<string, string>();
 const client = new Client({
 	intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages], //GatewayIntentBits.MessageContent
 });
@@ -121,6 +122,16 @@ client.once(Events.ClientReady, async () => {
 	// 	console.error('Failed to fetch log channel:');
 	// }
 
+	try {
+		const guild = await client.guilds.fetch(DISCORD_GUILD_ID);
+		if(!guild) throw '';
+		const collection = await guild.commands.fetch();
+		if(!collection) throw '';
+		for(const command of collection.values()) {
+			slashCommandIds.set(command.name, command.id);
+		}
+	} catch(e) {}
+
 	if(await isServerAlive()) {
 		computerStatus.status = ServerStatus.Online;
 		await connectToWS();
@@ -143,9 +154,9 @@ client.once(Events.ClientReady, async () => {
 });
 
 export async function handleWSMessage(data: WS.RawData) {
-	const parsed = JSON.parse(data.toString()) as WSMessage<any>;
-	console.log('Received message from WS: ', parsed.content);
-	switch(parsed.type) {
+	const message = JSON.parse(data.toString()) as WSMessage<any>;
+	console.log('Received message from WS: ', message.content);
+	switch(message.type) {
 		case WSMessageType.MinecraftLog:
 			/*if(log_channel) {
 				const max_message_len = 2000;
@@ -170,7 +181,7 @@ export async function handleWSMessage(data: WS.RawData) {
 			}*/
 			break;
 		case WSMessageType.MinecraftStatusUpdate:
-			serverStatus = (parsed as WSMessage<MinecraftStatusUpdate>).content;
+			serverStatus = (message as WSMessage<MinecraftStatusUpdate>).content;
 			//sendControlPanel(serverStatus, computerStatus);
 			// if(parsed.payload === 'ONLINE') {
 			// 	//starting = false;
@@ -184,7 +195,7 @@ export async function handleWSMessage(data: WS.RawData) {
 			break;
 
 		case WSMessageType.ComputerStatusUpdate:
-			computerStatus = (parsed as WSMessage<ComputerStatusUpdate>).content;
+			computerStatus = (message as WSMessage<ComputerStatusUpdate>).content;
 			//sendControlPanel(serverStatus, computerStatus);
 			break;
 
@@ -192,19 +203,21 @@ export async function handleWSMessage(data: WS.RawData) {
 			{
 				const embed = new EmbedBuilder()
 					.setTitle('Message')
-					//.setDescription(`Response to command: ${_cmd}, issued by @${_usr}.`)
-					.addFields([{ name: '\u200B', value: parsed.content }]);
+					.addFields([{ name: '\u200B', value: message.content }]);
+				if(message.responseTo && message.issuedBy)
+					embed.setDescription(`Response to command: ${formatCommandMention(message.responseTo)}, issued by ${message.issuedBy}.`);
 				commandChannel?.send({ embeds: [embed] });
 			}
 			break;
 		case WSMessageType.Error:
-			console.log('Received error from WS: ', parsed.content);
+			console.log('Received error from WS: ', message.content);
 			{
 				const embed = new EmbedBuilder()
 					.setColor('#FF0000')
 					.setTitle('Error')
-					//.setDescription(`Response to command: ${_cmd}, issued by @${_usr}.`)
-					.addFields([{ name: '\u200B', value: parsed.content }]);
+					.addFields([{ name: '\u200B', value: message.content }]);
+				if(message.responseTo && message.issuedBy)
+					embed.setDescription(`Response to command: ${formatCommandMention(message.responseTo)}, issued by ${message.issuedBy}.`);
 				commandChannel?.send({ embeds: [embed] });
 			}
 			break;

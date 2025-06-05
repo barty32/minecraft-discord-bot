@@ -32,10 +32,12 @@ export class WebSocketHandler {
 		});
 	}
 
-	public async send<T>(type: WSMessageType, message: T) {
+	public async send<T>(type: WSMessageType, message: T, responseTo?: string, issuedBy?: string) {
 		const payload = JSON.stringify({
 			type: type,
 			content: message,
+			responseTo: responseTo,
+			issuedBy: issuedBy,
 		} as WSMessage<T>);
 
 		for (const client of this.clients) {

@@ -10,6 +10,8 @@ export enum WSMessageType {
 export interface WSMessage<T> {
 	type: WSMessageType;
 	content: T;
+	responseTo?: string;
+	issuedBy?: string;
 }
 
 export enum ServerStatus {

@@ -1,6 +1,7 @@
 import {
 	ButtonInteraction,
 	ChatInputCommandInteraction,
+	MessageFlags,
 	SlashCommandBuilder
 } from 'discord.js';
 
@@ -9,5 +10,5 @@ export const data = new SlashCommandBuilder()
 	.setDescription('Replies with Pong!')
 
 export async function execute(interaction: ChatInputCommandInteraction | ButtonInteraction) {
-	await interaction.reply({ content: `Pong` });
+	await interaction.reply({ flags: MessageFlags.Ephemeral, content: `Pong` });
 }

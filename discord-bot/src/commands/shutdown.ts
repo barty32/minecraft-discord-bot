@@ -25,7 +25,7 @@ export async function execute(interaction: ChatInputCommandInteraction | ButtonI
 
 	try {
 		await connectToWS();
-		const response = await sendRequest('POST', '/api/shutdown', JSON.stringify({ autobackup }));
+		const response = await sendRequest('POST', '/api/shutdown', interaction.user.toString(), { autobackup });
 		if(response !== 'OK') throw new Error(response);
 		await sleep(5000);
 		reply.delete();

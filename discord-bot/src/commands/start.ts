@@ -5,7 +5,7 @@ import {
 	MessageFlags,
 	SlashCommandBuilder
 } from 'discord.js';
-import { isServerAlive, sendRequest, sleep, wakeUpComputer } from '../util.js';
+import { formatCommandMention, isServerAlive, sendRequest, sleep, wakeUpComputer } from '../util.js';
 import { connectToWS } from '../websocket.js';
 import { commandChannel } from '../index.js';
 
@@ -23,13 +23,13 @@ export async function execute(interaction: ChatInputCommandInteraction | ButtonI
 		if(!await isServerAlive()) {
 			const embed = new EmbedBuilder()
 				.setTitle('Server starting')
-				.setDescription(`Response to command: 'start', issued by ${interaction.user}.`)
+				.setDescription(`Response to command: ${formatCommandMention('start')}, issued by ${interaction.user}.`)
 				.addFields([{ name: '\u200B', value: 'Starting the machine.' }]);
 			commandChannel?.send({ embeds: [embed] });
 			await wakeUpComputer();
 		}
 		await connectToWS();
-		const response = await sendRequest('POST', '/api/start');
+		const response = await sendRequest('POST', '/api/start', interaction.user.toString());
 		if(response !== 'OK') throw new Error(response);
 		await sleep(5000);
 		reply.delete();

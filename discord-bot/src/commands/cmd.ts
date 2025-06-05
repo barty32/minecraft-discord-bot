@@ -24,9 +24,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
 	try {
 		await connectToWS();
-		const response = JSON.parse(await sendRequest('POST', '/api/command', JSON.stringify({
+		const response = JSON.parse(await sendRequest('POST', '/api/command', interaction.user.toString(), {
 			command: interaction.options.getString('command', true)
-		})));
+		}));
 		if(response.error !== false) throw new Error(response.message);
 		await sleep(5000);
 		reply.edit({

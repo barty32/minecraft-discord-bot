@@ -19,7 +19,7 @@ export async function execute(interaction: ChatInputCommandInteraction | ButtonI
 
 	try {
 		await connectToWS();
-		const response = await sendRequest('POST', '/api/backup');
+		const response = await sendRequest('POST', '/api/backup', interaction.user.toString());
 		if(response !== 'OK') throw new Error(response);
 		await sleep(5000);
 		reply.delete();

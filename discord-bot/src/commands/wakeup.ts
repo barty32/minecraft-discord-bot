@@ -5,7 +5,7 @@ import {
 	MessageFlags,
 	SlashCommandBuilder
 } from 'discord.js';
-import { isServerAlive, wakeUpComputer } from '../util.js';
+import { formatCommandMention, isServerAlive, wakeUpComputer } from '../util.js';
 import { connectToWS } from '../websocket.js';
 import { commandChannel } from '../index.js';
 
@@ -23,7 +23,7 @@ export async function execute(interaction: ChatInputCommandInteraction | ButtonI
 		if(!await isServerAlive()) {
 			const embed = new EmbedBuilder()
 				.setTitle('Server starting')
-				.setDescription(`Response to command: 'start', issued by ${interaction.user}.`)
+				.setDescription(`Response to command: ${formatCommandMention('wakeup')}, issued by ${interaction.user}.`)
 				.addFields([{ name: '\u200B', value: 'Starting the machine.' }]);
 			commandChannel?.send({ embeds: [embed] });
 			await wakeUpComputer();
