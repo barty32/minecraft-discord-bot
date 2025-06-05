@@ -117,17 +117,17 @@ export function createControlPanel(status: MinecraftStatusUpdate, computerStatus
 		.addTextDisplayComponents(new TextDisplayBuilder({ content: formatStatus(computerStatus.status).statusMessage }));
 	
 	if(computerStatus.status === ServerStatus.Online) {
-		if(computerStatus.cpuUsage) {
+		if(computerStatus.cpuUsage > 0) {
 			computerContainer.addTextDisplayComponents(new TextDisplayBuilder({
 				content: `CPU: ${computerStatus.cpuUsage}%`
 			}));
 		}
-		if(computerStatus.ramTotal && computerStatus.ramUsed) {
+		if(computerStatus.ramTotal > 0 && computerStatus.ramUsed !== -1) {
 			computerContainer.addTextDisplayComponents(new TextDisplayBuilder({
 				content: `RAM: ${formatSize(computerStatus.ramUsed)} of ${formatSize(computerStatus.ramTotal)} (${(computerStatus.ramUsed / computerStatus.ramTotal * 100).toFixed(1)}%)`
 			}));
 		}
-		if(computerStatus.diskTotal && computerStatus.diskUsed) {
+		if(computerStatus.diskTotal > 0 && computerStatus.diskUsed !== -1) {
 			computerContainer.addTextDisplayComponents(new TextDisplayBuilder({
 				content: `Disk: ${computerStatus.diskUsed} GB of ${computerStatus.diskTotal} GB (${(computerStatus.diskUsed / computerStatus.diskTotal * 100).toFixed(1)}%)`
 			}));

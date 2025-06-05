@@ -32,9 +32,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 		reply.edit({
 			content: `Command response: ${response.message}`,
 		});
-	} catch(error) {
+	} catch(e) {
 		reply.edit({
-			content: `Error when sending the command: ${error}`,
+			content: `Error when sending the command: ${e instanceof Error ? e.message : String(e)}`,
 		});
 	}
 }
