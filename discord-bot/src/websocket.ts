@@ -36,9 +36,9 @@ const establishWSConnection = async () => {
 	});
 };
 
-export const connectToWS = async (/*messageHandler: (data: WS.RawData) => void*/) => {
+export const connectToWS = async () => {
 
-	if(!isServerAlive())
+	if(!await isServerAlive())
 		throw new Error('The server is offline.');
 	
 	console.log('Connecting to WebSocket server...');
