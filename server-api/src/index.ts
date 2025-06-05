@@ -81,17 +81,12 @@ MCServer.onStatusUpdate = async (status: ServerStatus) => {
 	log(`Server status updated: ${status}`);
 	if(status === ServerStatus.Online) {
 		wss.send(WSMessageType.Message, '@everyone The server is 🟢 ONLINE.');
-
-		setInterval(onlineStatusUpdate, 10000);
-
-		// setTimeout(() => {
-		// 	exec('bash /home/mcserver/ftp/server/server_api/move_markers.sh');
-		// }, 90000);
+		onlineStatusInterval = setInterval(onlineStatusUpdate, 10000);
 	}
 	onlineStatusUpdate();
 }
 
-let onlineStatusInterval;
+let onlineStatusInterval: NodeJS.Timeout;
 const onlineStatusUpdate = async () => {
 	const update: MinecraftStatusUpdate = {
 		status: MCServer.getStatus(),

@@ -1,6 +1,6 @@
-import { ChildProcessWithoutNullStreams, spawn } from "child_process";
+import { ChildProcessWithoutNullStreams, exec, spawn } from "child_process";
 import util, { RCON } from "minecraft-server-util";
-import { JAVA_EXECUTABLE, MINECRAFT_PORT, MINECRAFT_SERVER_ARGS, RCON_PASSWORD, RCON_PORT, SERVER_ADDRESS } from "./constants.js";
+import { JAVA_EXECUTABLE, MINECRAFT_PORT, MINECRAFT_SERVER_ARGS, POST_START_SCRIPT, PRE_START_SCRIPT, RCON_PASSWORD, RCON_PORT, SERVER_ADDRESS } from "./constants.js";
 import { error, log } from "./util.js";
 import { ServerStatus } from "./types.js";
 
@@ -26,6 +26,15 @@ export class MinecraftServer {
 
 	public start() {
 		return new Promise<void>((res, rej) => {
+			if(PRE_START_SCRIPT) {
+				log(`Running pre-start script: ${PRE_START_SCRIPT}`);
+				try {
+					exec(PRE_START_SCRIPT);
+				} catch(e) {
+					error(`Failed to run pre-start script: ${e instanceof Error ? e.message : String(e)}`);
+				}
+			}
+			
 			this.process = spawn(JAVA_EXECUTABLE, MINECRAFT_SERVER_ARGS);
 			this.process.stdout.setEncoding('utf8');
 			
@@ -57,6 +66,15 @@ export class MinecraftServer {
 						client.close();
 
 						this.setStatus(ServerStatus.Online);
+
+						if(POST_START_SCRIPT) {
+							log(`Running post-start script: ${POST_START_SCRIPT}`);
+							try {
+								exec(POST_START_SCRIPT);
+							} catch(e) {
+								error(`Failed to run post-start script: ${e instanceof Error ? e.message : String(e)}`);
+							}
+						}
 						res();
 					}
 					clearInterval(interval);
