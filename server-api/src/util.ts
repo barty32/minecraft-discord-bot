@@ -2,7 +2,7 @@ import { exec, spawn } from 'child_process';
 import { REMOTE_SHUTDOWN_ENABLED, SECRET_KEY } from './constants.js';
 
 
-export const shutdown = () => REMOTE_SHUTDOWN_ENABLED && exec('shutdown now');
+export const shutdown = () => REMOTE_SHUTDOWN_ENABLED && exec('sudo shutdown -h now');
 
 export const spawnSyncProcess = (command: string, args: string[]) => {
 	return new Promise((res, rej) => {

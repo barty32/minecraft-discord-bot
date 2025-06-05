@@ -1,0 +1,13 @@
+[Unit]
+Description=Minecraft server API
+After=network.target
+
+[Service]
+Type=simple
+# Change this to your user name
+User=server
+ExecStart=/usr/bin/node /home/server/server_api/dist/index.js
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

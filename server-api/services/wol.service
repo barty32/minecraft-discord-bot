@@ -1,0 +1,10 @@
+[Unit]
+Description=Enable Wake On Lan
+
+[Service]
+Type=oneshot
+# Here change enp3s0 to your ethernet interface name
+ExecStart=/usr/sbin/ethtool --change enp3s0 wol g
+
+[Install]
+WantedBy=basic.target

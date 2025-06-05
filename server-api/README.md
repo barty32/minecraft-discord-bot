@@ -2,6 +2,15 @@
 To be ran on the same computer where the Minecraft server files live - copy into MC server root directory.
 
 **NOTE: The computer must have Wake-On-Lan enabled in BIOS!**
+
+Enable services \
+`cd services` \
+`sudo systemctl enable ./wol.service` \
+`sudo systemctl enable ./server-api.service`
+
+Add this to the end of `/etc/sudoers` \
+`<insert your username here> ALL=NOPASSWD: /usr/sbin/shutdown,/usr/bin/systemctl poweroff`
+
 ## Config options
 Create a file named `config.json` in this directory
 
