@@ -11,7 +11,7 @@ import {
 	MessageFlags,
 	Guild
 } from 'discord.js';
-import { JOIN_MESSAGE, SECRET_KEY, SERVER_ADDRESS, SERVER_API, SERVER_MAC } from './constants.js';
+import { DISCORD_APPLICATION_ID, JOIN_MESSAGE, SECRET_KEY, SERVER_ADDRESS, SERVER_API, SERVER_MAC } from './constants.js';
 import { ComputerStatusUpdate, MinecraftStatusUpdate, ServerStatus } from './types.js';
 import { computerStatus, controlChannel, serverStatus, slashCommandIds } from './index.js';
 
@@ -170,12 +170,15 @@ export function createControlPanel(status: MinecraftStatusUpdate, computerStatus
 export async function sendControlPanel(serverStatus: MinecraftStatusUpdate, computerStatus: ComputerStatusUpdate) {
 	try {
 		const msg = await controlChannel?.messages.fetch(controlChannel.lastMessageId ?? '');
-		if(!msg) throw new Error('');
+		if(!msg || msg.author.id !== DISCORD_APPLICATION_ID) throw new Error('');
 		msg.edit({
 			flags: MessageFlags.IsComponentsV2,
 			components: createControlPanel(serverStatus, computerStatus),
 		});
 	} catch(e) {
+		try {
+			controlChannel?.bulkDelete(100);
+		} catch(e) {}
 		controlChannel?.send({
 			flags: MessageFlags.IsComponentsV2,
 			components: createControlPanel(serverStatus, computerStatus),
