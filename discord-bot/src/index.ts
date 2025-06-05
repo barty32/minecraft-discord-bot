@@ -131,9 +131,11 @@ client.once(Events.ClientReady, async () => {
 
 	setInterval(async () => {
 		if(await isServerAlive()) {
-			computerStatus.status = ServerStatus.Online;
+			if(computerStatus.status !== ServerStatus.Stopping) {
+				computerStatus.status = ServerStatus.Online;
+			}
 		}
-		else if(computerStatus.status !== ServerStatus.Starting){ 
+		else if(computerStatus.status !== ServerStatus.Starting){
 			computerStatus.status = ServerStatus.Offline;
 		}
 		await sendControlPanel(serverStatus, computerStatus);
@@ -169,7 +171,7 @@ export async function handleWSMessage(data: WS.RawData) {
 			break;
 		case WSMessageType.MinecraftStatusUpdate:
 			serverStatus = (parsed as WSMessage<MinecraftStatusUpdate>).content;
-			sendControlPanel(serverStatus, computerStatus);
+			//sendControlPanel(serverStatus, computerStatus);
 			// if(parsed.payload === 'ONLINE') {
 			// 	//starting = false;
 			// 	const embed = new EmbedBuilder()
@@ -183,7 +185,7 @@ export async function handleWSMessage(data: WS.RawData) {
 
 		case WSMessageType.ComputerStatusUpdate:
 			computerStatus = (parsed as WSMessage<ComputerStatusUpdate>).content;
-			sendControlPanel(serverStatus, computerStatus);
+			//sendControlPanel(serverStatus, computerStatus);
 			break;
 
 		case WSMessageType.Message:
