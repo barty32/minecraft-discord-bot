@@ -1,0 +1,13 @@
+{
+	"token": "insert_your_token_here",
+	"guild_id": "123456789012345678",
+	"application_id": "123456789012345678",
+	"control_channel": "123456789012345678",
+	"command_channel": "123456789012345678",
+	"log_channel": "",
+	"secret_key": "abcd",
+	"server_address": "192.168.1.52",
+	"server_port": 25566,
+	"server_mac": "12:34:56:78:9a:bc",
+	"join_message": "You can join it at **192.168.1.52**."
+}

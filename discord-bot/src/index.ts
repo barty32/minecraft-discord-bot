@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import WS from 'ws';
-import 'dotenv/config';
 import {
 	Client,
 	GatewayIntentBits,
@@ -12,6 +11,7 @@ import {
 	MessageFlags
 } from 'discord.js';
 import { ComputerStatusUpdate, MinecraftStatusUpdate, ServerStatus, SlashCommand, WSMessage, WSMessageType } from './types.js';
+import { DISCORD_COMMAND_CHANNEL_ID, DISCORD_CONTROL_CHANNEL_ID, DISCORD_TOKEN } from './constants.js';
 import { isServerAlive, sendControlPanel, sendRequest } from './util.js';
 import { connectToWS } from './websocket.js';
 
@@ -83,7 +83,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 export let controlChannel: TextChannel | null = null;
 export let commandChannel: TextChannel | null = null;
-export let logChannel: TextChannel | null = null;
+// export let logChannel: TextChannel | null = null;
 
 client.once(Events.ClientReady, async () => {
 	// wait for client to connect
@@ -95,7 +95,7 @@ client.once(Events.ClientReady, async () => {
 	console.log(`Logged in as ${client.user?.tag}!`);
 
 	try {
-		const cch = await client.channels.fetch(process.env.CONTROL_CHANNEL ?? '');
+		const cch = await client.channels.fetch(DISCORD_CONTROL_CHANNEL_ID);
 		if(cch instanceof TextChannel) {
 			controlChannel = cch;
 		}
@@ -104,7 +104,7 @@ client.once(Events.ClientReady, async () => {
 	}
 
 	try {
-		const cmdch = await client.channels.fetch(process.env.COMMAND_CHANNEL ?? '');
+		const cmdch = await client.channels.fetch(DISCORD_COMMAND_CHANNEL_ID);
 		if(cmdch instanceof TextChannel) {
 			commandChannel = cmdch;
 		}
@@ -112,14 +112,14 @@ client.once(Events.ClientReady, async () => {
 		console.error('Failed to fetch command channel:', );
 	}
 
-	try {
-		const lch = await client.channels.fetch(process.env.LOG_CHANNEL ?? '');
-		if(lch instanceof TextChannel) {
-			logChannel = lch;
-		}
-	} catch(e) {
-		console.error('Failed to fetch log channel:');
-	}
+	// try {
+	// 	const lch = await client.channels.fetch(process.env.LOG_CHANNEL ?? '');
+	// 	if(lch instanceof TextChannel) {
+	// 		logChannel = lch;
+	// 	}
+	// } catch(e) {
+	// 	console.error('Failed to fetch log channel:');
+	// }
 
 	if(await isServerAlive()) {
 		computerStatus.status = ServerStatus.Online;
@@ -226,6 +226,6 @@ const registerSlashCommands = async () => {
 	}
 }
 
-client.login(process.env.TOKEN);
+client.login(DISCORD_TOKEN);
 
 registerSlashCommands();

@@ -188,7 +188,7 @@ export const isServerAlive = async () => {
 			if(isAlive) {
 				fetch(SERVER_API + '/api/ping', {
 					headers: {
-						key: SECRET_KEY!,
+						key: SECRET_KEY,
 					},
 				})
 					.then(() => resolve(true))

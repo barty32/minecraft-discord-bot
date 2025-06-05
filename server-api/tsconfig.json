@@ -4,6 +4,7 @@
     "module": "NodeNext",
     "lib": ["es6", "ES2020", "esnext.asynciterable"],
     "sourceMap": true,
+	"rootDir": "./src",
     "outDir": "./dist",
     "moduleResolution": "nodenext",
     "removeComments": true,
@@ -24,5 +25,5 @@
     "strict": false
   },
   "exclude": ["node_modules"],
-  "include": ["./src/**/*.tsx", "./src/**/*.ts"]
+  "include": ["./src/**/*.tsx", "./src/**/*.ts", "./config.json"]
 }

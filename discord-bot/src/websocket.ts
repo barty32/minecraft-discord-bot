@@ -86,7 +86,7 @@ export const connectToWS = async (/*messageHandler: (data: WS.RawData) => void*/
 	console.log('Connected to WebSocket server.');
 
 	// wsConnection!.on('message', messageHandler);
-	wsConnection!.on('message', handleWSMessage);
+	wsConnection.on('message', handleWSMessage);
 
 	return null;
 };

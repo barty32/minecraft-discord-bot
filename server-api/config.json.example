@@ -1,0 +1,26 @@
+{
+	"serverPort": 25566,
+	"minecraftPort": 25565,
+	"minecraftWorldName": "mcserver",
+	"rconPort": 25575,
+	"rconPassword": "password",
+	"secretKey": "abcd",
+	"remoteShutdownEnabled": true,
+	"serverRootPath": "/home/server/minecraft",
+	"backupPath": "/home/server/minecraft/backups",
+	"preStartScript": "bash /home/server/minecraft/pre-start.sh",
+	"postStartScript": "bash /home/server/minecraft/post-start.sh",
+	"javaExecutable": "/home/server/.runtime/jdk1.8.0_421/bin/java",
+	"javaArgs": [
+		"-Xmx7G",
+		"-XX:ParallelGCThreads=2",
+		"-XX:+UseConcMarkSweepGC",
+		"-XX:+UseParNewGC",
+		"-jar",
+		"forge-server.jar",
+		"-Dfml.readTimeout=180",
+		"-Dfml.queryResult=confirm",
+		"-Dlog4j.configurationFile=log4j2_112-116.xml",
+		"nogui"
+	]
+}

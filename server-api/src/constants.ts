@@ -1,18 +1,23 @@
 import path from 'path';
+import config from '../config.json' with { type: "json" };
 
 export const SERVER_ADDRESS = 'localhost';
-export const SERVER_PORT = parseInt(process.env.SERVER_PORT || '25566');
-export const MINECRAFT_PORT = parseInt(process.env.MINECRAFT_PORT || '25565');
-export const MC_SERVER_NAME = process.env.MINECRAFT_WORLD_NAME || 'minecraft_server';
-export const RCON_PORT = parseInt(process.env.RCON_PORT || '25575');
-export const RCON_PASSWORD = process.env.RCON_PASSWORD || '';
-export const SECRET_KEY = process.env.SECRET_KEY || '';
-export const REMOTE_SHUTDOWN_ENABLED = process.env.REMOTE_SHUTDOWN_ENABLED === 'true';
-export const SERVER_ROOT_PATH = process.env.SERVER_ROOT_PATH || '/';
-export const BACKUP_PATH = process.env.BACKUP_PATH || path.join(SERVER_ROOT_PATH, 'backups');
+export const SERVER_PORT = config.serverPort || 25566;
+export const MINECRAFT_PORT = config.minecraftPort || 25565;
+export const MC_SERVER_NAME = config.minecraftWorldName || 'minecraft_server';
+export const RCON_PORT = config.rconPort || 25575;
+export const RCON_PASSWORD = config.rconPassword || '';
+export const SECRET_KEY = config.secretKey || '';
+export const REMOTE_SHUTDOWN_ENABLED = config.remoteShutdownEnabled === true;
+export const SERVER_ROOT_PATH = config.serverRootPath || '/';
+export const BACKUP_PATH = config.backupPath || path.join(SERVER_ROOT_PATH, 'backups');
 export const DATA_PATH = path.join(SERVER_ROOT_PATH, MC_SERVER_NAME);
-export const JAVA_EXECUTABLE = process.env.JAVA_EXECUTABLE || 'java';
-export const MINECRAFT_SERVER_ARGS = [
+
+export const PRE_START_SCRIPT = config.preStartScript || '';
+export const POST_START_SCRIPT = config.postStartScript || '';
+
+export const JAVA_EXECUTABLE = config.javaExecutable || 'java';
+export const MINECRAFT_SERVER_ARGS = config.javaArgs || [
 	'-Xmx7G',
 	'-XX:ParallelGCThreads=2',
 	'-XX:+UseConcMarkSweepGC',

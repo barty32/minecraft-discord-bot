@@ -1,7 +1,7 @@
 import { REST, Routes } from 'discord.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import 'dotenv/config';
+import { DISCORD_APPLICATION_ID, DISCORD_GUILD_ID, DISCORD_TOKEN } from './constants.js';
 
 const commands = [];
 
@@ -20,7 +20,7 @@ for(const file of commandFiles) {
 }
 
 // Construct and prepare an instance of the REST module
-const rest = new REST().setToken(process.env.TOKEN ?? '');
+const rest = new REST().setToken(DISCORD_TOKEN);
 
 // and deploy your commands!
 (async () => {
@@ -29,7 +29,7 @@ const rest = new REST().setToken(process.env.TOKEN ?? '');
 
 		// The put method is used to fully refresh all commands in the guild with the current set
 		const data = await rest.put(
-			Routes.applicationGuildCommands(process.env.APPLICATION_ID ?? '', process.env.GUILD_ID ?? ''),
+			Routes.applicationGuildCommands(DISCORD_APPLICATION_ID, DISCORD_GUILD_ID),
 			{ body: commands },
 		) as any[];
 

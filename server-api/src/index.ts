@@ -3,7 +3,6 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import sqlite3 from 'sqlite3';
-import 'dotenv/config';
 import osutil from 'node-os-utils';
 import { ComputerStatusUpdate, MinecraftStatusUpdate, ServerStatus, WSMessageType } from './types.js';
 import { BACKUP_PATH, SERVER_PORT, SERVER_ROOT_PATH } from './constants.js';
@@ -116,11 +115,11 @@ let computerStatus = ServerStatus.Online;
 const computerStatusUpdate = async () => {
 	const update: ComputerStatusUpdate = {
 		status: computerStatus,
-		cpuUsage: 0,
-		diskTotal: 0,
-		diskUsed: 0,
-		ramTotal: 0,
-		ramUsed: 0,
+		cpuUsage: -1,
+		diskTotal: -1,
+		diskUsed: -1,
+		ramTotal: -1,
+		ramUsed: -1,
 	};
 	try {
 		update.cpuUsage = await osutil.cpu.usage(5000);
