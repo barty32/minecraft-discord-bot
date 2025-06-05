@@ -64,9 +64,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
 		}
 	}
 	else if(interaction.isButton()) {
-		const command = slashCommands.get(interaction.customId);
+		const interactionId = interaction.customId.split(':')[0];
+		const command = slashCommands.get(interactionId);
 		if(!command) {
-			console.error(`No command matching '${interaction.customId}' was found.`);
+			console.error(`No command matching '${interactionId}' was found.`);
 			return;
 		}
 		try {

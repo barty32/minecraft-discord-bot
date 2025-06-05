@@ -44,8 +44,7 @@ export async function execute(interaction: ChatInputCommandInteraction | ButtonI
 			const size = backup.size;
 
 			const wakeUp = new ButtonBuilder()
-				//TODO implement loading backups from these buttons
-				.setCustomId('loadbackup' + id)
+				.setCustomId('loadbackup:' + id)
 				.setLabel('Load')
 				.setStyle(ButtonStyle.Primary);
 			
