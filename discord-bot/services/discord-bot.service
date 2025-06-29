@@ -1,9 +1,11 @@
 [Unit]
 Description=Minecraft Discord bot service
+After=network.target
 
 [Service]
 Type=simple
 ExecStart=/bin/node /usr/local/minecraft-discord-bot/discord-bot/dist/index.js
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
