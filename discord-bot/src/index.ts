@@ -45,6 +45,10 @@ client.on(Events.Warn, (w) => {
 	console.warn('Discord client warning:', w);
 });
 
+process.on('unhandledRejection', error => {
+	console.error('Unhandled promise rejection:', error);
+});
+
 client.on(Events.InteractionCreate, async (interaction) => {
 	if(interaction.isChatInputCommand()) {
 		const command = slashCommands.get(interaction.commandName);
@@ -142,15 +146,20 @@ client.once(Events.ClientReady, async () => {
 	await sendControlPanel(serverStatus, computerStatus);
 
 	setInterval(async () => {
-		if(await isServerAlive()) {
-			if(computerStatus.status !== ServerStatus.Stopping) {
-				computerStatus.status = ServerStatus.Online;
+		try {
+			if(await isServerAlive()) {
+				if(computerStatus.status !== ServerStatus.Stopping) {
+					computerStatus.status = ServerStatus.Online;
+				}
 			}
+			else if(computerStatus.status !== ServerStatus.Starting){
+				computerStatus.status = ServerStatus.Offline;
+			}
+			console.log('Polling computer status:', computerStatus.status);
+			await sendControlPanel(serverStatus, computerStatus);
+		} catch(e) {
+			console.error('Error in polling loop:', e);
 		}
-		else if(computerStatus.status !== ServerStatus.Starting){
-			computerStatus.status = ServerStatus.Offline;
-		}
-		await sendControlPanel(serverStatus, computerStatus);
 	}, 10000);
 });
 
