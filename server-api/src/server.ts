@@ -1,5 +1,6 @@
 import { ChildProcessWithoutNullStreams, exec, spawn } from "child_process";
-import util, { RCON } from "minecraft-server-util";
+import util from "minecraft-server-util";
+import { Rcon } from "rcon-client"
 import { JAVA_EXECUTABLE, MINECRAFT_PORT, MINECRAFT_SERVER_ARGS, POST_START_SCRIPT, PRE_START_SCRIPT, RCON_PASSWORD, RCON_PORT, SERVER_ADDRESS } from "./constants.js";
 import { error, log } from "./util.js";
 import { ServerStatus } from "./types.js";
@@ -52,19 +53,21 @@ export class MinecraftServer {
 				rej(err);
 			});
 
-			this.process.stdout.addListener('data', (chunk) => {
-				//TODO: filter minecraft log
-				// const message: WSMessage<string> = { code: 1001, payload: chunk };
-				// pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
-			});
+			// this.process.stdout.addListener('data', (chunk) => {
+			// 	//TODO: filter minecraft log
+			// 	// const message: WSMessage<string> = { code: 1001, payload: chunk };
+			// 	// pub.publish(REDIS_PUBLIC_CHANNEL, JSON.stringify(message));
+			// });
 
 			const interval = setInterval(async () => {
 				try {
 					if(this.status === ServerStatus.Starting) {
-						const client = new RCON();
-						await client.connect(SERVER_ADDRESS, RCON_PORT);
-						client.close();
+						// const client = new RCON();
+						// await client.connect(SERVER_ADDRESS, RCON_PORT);
+						// client.close();
+						await this.getMinecraftStatus();
 
+						// Server is online
 						this.setStatus(ServerStatus.Online);
 
 						if(POST_START_SCRIPT) {
@@ -79,6 +82,7 @@ export class MinecraftServer {
 					}
 					clearInterval(interval);
 				} catch(e) {
+					// Server is offline
 					error(e);
 				}
 			}, 5000);
@@ -95,14 +99,14 @@ export class MinecraftServer {
 		this.setStatus(ServerStatus.Stopping);
 
 		// run this only once
-		const handler = () => {
-			this.process?.removeListener('close', handler);
-		};
-		// remove default event listener
-		this.process.removeAllListeners('close');
-		this.process.addListener('close', handler);
+		// const handler = () => {
+		// 	this.process?.removeListener('close', handler);
+		// };
+		// // remove default event listener
+		// this.process.removeAllListeners('close');
+		// this.process.addListener('close', handler);
 		
-		this.process.stdout.removeAllListeners('data');
+		// this.process.stdout.removeAllListeners('data');
 		try {
 			await this.sendCommand('stop');
 			this.setStatus(ServerStatus.Offline);
@@ -115,19 +119,20 @@ export class MinecraftServer {
 		this.process = null;
 	}
 
-	public async restart(): Promise<void> {
-
-
-	}
-
 	public async sendCommand(command: string): Promise<string> {
 		try {
-			const client = new RCON();
-			await client.connect(SERVER_ADDRESS, RCON_PORT);
-			await client.login(RCON_PASSWORD);
+			// const client = new RCON();
+			// await client.connect(SERVER_ADDRESS, RCON_PORT);
+			// await client.login(RCON_PASSWORD);
 
-			const result = await client.execute(command);
-			client.close();
+			// const result = await client.execute(command);
+			// await client.close();
+
+			const rcon = new Rcon({ host: SERVER_ADDRESS, port: RCON_PORT, password: RCON_PASSWORD });
+			await rcon.connect();
+
+			const result = await rcon.send(command);
+			await rcon.end();
 
 			return result;
 		} catch(e) {
